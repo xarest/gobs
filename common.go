@@ -1,8 +1,11 @@
 package gobs
 
-import "context"
+import (
+	"context"
+	"reflect"
+)
 
-func ConcurrenceProcesses[T any](ctx context.Context, processes []T, proc func(ctx context.Context, p T) error) error {
+func concurrenceProcesses[T any](ctx context.Context, processes []T, proc func(ctx context.Context, p T) error) error {
 	if len(processes) == 0 {
 		return nil
 	}
@@ -36,4 +39,12 @@ func ConcurrenceProcesses[T any](ctx context.Context, processes []T, proc func(c
 		return errs[0]
 	}
 	return nil
+}
+
+func defaultServiceName(s IService) string {
+	t := reflect.TypeOf(s)
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	return t.PkgPath() + "." + t.Name()
 }

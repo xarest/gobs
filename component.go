@@ -5,17 +5,8 @@ import (
 	"sync"
 )
 
-type BlockIdentifier struct {
-	S IService
-	N string
-}
-
 type Component struct {
-	OnSetup      *func(context.Context, []BlockIdentifier) error
-	OnStart      *func(context.Context) error
-	OnStop       *func(context.Context) error
-	Dependencies []BlockIdentifier
-
+	ServiceLifeCycle
 	dependOn   []*Component
 	followers  []*Component
 	followChan []chan error
@@ -23,6 +14,7 @@ type Component struct {
 	name       string
 	status     ServiceStatus
 	mu         *sync.Mutex
+	config     *Config
 }
 
 func NewComponent(s IService, name string, status ServiceStatus) *Component {
@@ -34,14 +26,11 @@ func NewComponent(s IService, name string, status ServiceStatus) *Component {
 	}
 }
 
-func (sb *Component) setup(ctx context.Context,
-	onSetup *func(ctx context.Context, s IService, key string, err error),
-) (err error) {
+func (sb *Component) setup(ctx context.Context) (err error) {
 	defer func() {
 		sb.mu.Lock()
 		sb.notify(err)
 		sb.mu.Unlock()
-		(*onSetup)(ctx, sb.service, sb.name, err)
 	}()
 	if err = sb.wait(sb.dependOn, StatusSetup); err != nil {
 		return err
@@ -53,7 +42,7 @@ func (sb *Component) setup(ctx context.Context,
 		return nil
 	}
 	sb.mu.Unlock()
-	err = (*sb.OnSetup)(ctx, sb.Dependencies)
+	err = (*sb.OnSetup)(ctx, sb.Deps, sb.ExtraDeps)
 	sb.mu.Lock()
 	if err == nil {
 		sb.status = StatusSetup
@@ -62,14 +51,11 @@ func (sb *Component) setup(ctx context.Context,
 	return err
 }
 
-func (sb *Component) start(ctx context.Context,
-	onStart *func(ctx context.Context, s IService, key string, err error),
-) (err error) {
+func (sb *Component) start(ctx context.Context) (err error) {
 	defer func() {
 		sb.mu.Lock()
 		sb.notify(err)
 		sb.mu.Unlock()
-		(*onStart)(ctx, sb.service, sb.name, err)
 	}()
 	if err = sb.wait(sb.dependOn, StatusStart); err != nil {
 		return err
@@ -90,17 +76,12 @@ func (sb *Component) start(ctx context.Context,
 	return err
 }
 
-func (sb *Component) stop(ctx context.Context,
-	onStop *func(ctx context.Context, s IService, key string, err error),
-) (err error) {
+func (sb *Component) stop(ctx context.Context) (err error) {
 	defer func() {
 		sb.mu.Lock()
 		sb.status = StatusStop
 		sb.notify(err)
 		sb.mu.Unlock()
-		if onStop != nil {
-			(*onStop)(ctx, sb.service, sb.name, err)
-		}
 	}()
 	if err = sb.wait(sb.followers, StatusStop); err != nil {
 		return err
@@ -113,16 +94,18 @@ func (sb *Component) stop(ctx context.Context,
 
 func (s *Component) wait(sbs []*Component, ss ServiceStatus) (err error) {
 	for _, sb := range sbs {
+		s.LogComponent("Service %s is waiting for %s", s.name, sb.name)
 		sb.mu.Lock()
 		if sb.status >= ss {
 			sb.mu.Unlock()
+			s.LogComponent("Service %s is done waiting for %s", s.name, sb.name)
 			continue
 		}
 		ch := make(chan error)
 		sb.followChan = append(sb.followChan, ch)
 		sb.mu.Unlock()
-
 		err = <-ch
+		s.LogComponent("Service %s is done waiting for %s", s.name, sb.name)
 		if err != nil {
 			return err
 		}
@@ -131,6 +114,7 @@ func (s *Component) wait(sbs []*Component, ss ServiceStatus) (err error) {
 }
 
 func (sb *Component) notify(err error) {
+	sb.LogComponent("Service %s is notifying %d followers", sb.name, len(sb.followChan))
 	for _, ch := range sb.followChan {
 		ch <- err
 		close(ch)
