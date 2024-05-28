@@ -60,10 +60,11 @@ func (bs *Bootstrap) AddOrPanic(s IService, args ...string) {
 func (bs *Bootstrap) Add(s IService, status ServiceStatus, key string) error {
 	if key == "" {
 		key = defaultServiceName(s)
+		if key == "" {
+			return errors.New("service name is empty")
+		}
 	}
-	if key == "" {
-		return errors.New("service name is empty")
-	}
+
 	if bs.keys[key] != nil {
 		return nil
 	}
@@ -88,7 +89,11 @@ func (bs *Bootstrap) Setup(ctx context.Context) error {
 	return concurrenceProcesses(ctx, bs.services,
 		func(ctx context.Context, sb *Component) error {
 			err := sb.setup(ctx)
-			bs.LogModule(bs.config.EnableLogSetup, "Service %s setup successfully", sb.name)
+			if err != nil {
+				bs.LogModule(bs.config.EnableLogSetup, "Service %s setup successfully", sb.name)
+			} else {
+				bs.LogModule(bs.config.EnableLogSetup, "Service %s setup failed %v", sb.name, err)
+			}
 			return err
 		},
 	)
@@ -137,7 +142,11 @@ func (bs *Bootstrap) Start(ctx context.Context) error {
 	return concurrenceProcesses(ctx, bs.services,
 		func(ctx context.Context, sb *Component) error {
 			err := sb.start(ctx)
-			bs.LogModule(bs.config.EnableLogStart, "Service %s started", sb.name)
+			if err != nil {
+				bs.LogModule(bs.config.EnableLogStart, "Service %s started", sb.name)
+			} else {
+				bs.LogModule(bs.config.EnableLogStart, "Service %s start failed %v", sb.name, err)
+			}
 			return err
 		},
 	)
@@ -146,8 +155,12 @@ func (bs *Bootstrap) Start(ctx context.Context) error {
 func (bs *Bootstrap) Stop(ctx context.Context) error {
 	return concurrenceProcesses(ctx, bs.services,
 		func(ctx context.Context, sb *Component) error {
-			sb.stop(ctx)
-			bs.LogModule(bs.config.EnableLogStop, "Service %s is stopped", sb.name)
+			err := sb.stop(ctx)
+			if err != nil {
+				bs.LogModule(bs.config.EnableLogStop, "Service %s is stopped", sb.name)
+			} else {
+				bs.LogModule(bs.config.EnableLogStop, "Service %s stoped with error %v", sb.name, err)
+			}
 			return nil
 		},
 	)
