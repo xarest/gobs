@@ -23,6 +23,7 @@ func (d *D) Init(ctx context.Context, co *gobs.Component) error {
 		// After B & C finish setting up, this callback will be called
 		d.B = deps[0].(*B)
 		d.C = deps[1].(*C)
+		// Other custom setup/configration go here
 		return nil
 	}
 	co.OnSetup = &onSetup
