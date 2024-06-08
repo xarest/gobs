@@ -2,6 +2,7 @@ package gobs_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -59,5 +60,15 @@ func Test_Bootstrap(t *testing.T) {
 	}
 	if d.C != c {
 		t.Errorf("Expected D.C is %p, but got %p", c, d.C)
+	}
+
+	if err := bs.Start(ctx); err != nil {
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("Expect context canceled, but got %v", err)
+		}
+	}
+
+	if err := bs.Stop(ctx); err != nil {
+		t.Errorf("Expected no error, but got %v", err)
 	}
 }

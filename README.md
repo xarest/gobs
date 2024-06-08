@@ -49,11 +49,11 @@ Service C is added
 Service A is added
 Service A is notifying 0 followers
 Service A setup successfully
+Service D is waiting for B
 Service B is waiting for A
 Service B is done waiting for A
-Service B is notifying 0 followers
+Service B is notifying 1 followers
 Service B setup successfully
-Service D is waiting for B
 Service D is done waiting for B
 Service D is waiting for C
 Service C is waiting for A
@@ -65,4 +65,41 @@ Service C setup successfully
 Service D is done waiting for C
 Service D is notifying 0 followers
 Service D setup successfully
+Service A is notifying 0 followers
+Service A started
+Service C is waiting for A
+Service C is done waiting for A
+Service C is waiting for B
+Service D is waiting for B
+Service B is waiting for A
+Service B is done waiting for A
+Service B is notifying 2 followers
+Service B started
+Service C is done waiting for B
+Service C is notifying 0 followers
+Service C started
+Service D is done waiting for B
+Service D is waiting for C
+Service D is done waiting for C
+Service D is notifying 0 followers
+Service D started
+// Stopping services
+Service A is waiting for B
+Service B is waiting for D
+Service C is waiting for D
+Service D is notifying 2 followers
+Service D is stopped
+Service B is done waiting for D
+Service B is waiting for C
+Service C is done waiting for D
+Service C is notifying 1 followers
+Service C is stopped
+Service B is done waiting for C
+Service B is notifying 1 followers
+Service B is stopped
+Service A is done waiting for B
+Service A is waiting for C
+Service A is done waiting for C
+Service A is notifying 0 followers
+Service A is stopped
 ```
