@@ -4,71 +4,76 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"testing"
+	"time"
 
 	"github.com/traphamxuan/gobs"
+	"github.com/traphamxuan/gobs/logger"
 )
 
-func Test_Bootstrap(t *testing.T) {
-	ctx := context.TODO()
+func Test_Sync(t *testing.T) {
+	fmt.Println("Test_Bootstrap")
+	mainCtx := context.Background()
+	ctx, _ := context.WithDeadline(mainCtx, time.Now().Add(5*time.Second))
+	var logger logger.LogFnc = func(s string, i ...interface{}) {
+		fmt.Printf(s+"\n", i...)
+	}
 	bs := gobs.NewBootstrap(gobs.Config{
-		IsConcurrent: true,
-		Logger: func(s string, i ...interface{}) {
-			fmt.Printf(s+"\n", i...)
-		},
-		EnableLogModule: true,
-		EnableLogDetail: true,
-		EnableLogAdd:    true,
-		EnableLogSetup:  true,
-		EnableLogStart:  true,
-		EnableLogStop:   true,
+		NumOfConcurrencies: 0,
+		Logger:             &logger,
+		EnableLogDetail:    true,
 	})
 	bs.AddDefault(&D{})
 
+	if err := bs.Init(ctx); err != nil {
+		log.Fatalf("Init expected no error, but got %v", err)
+	}
+
 	if err := bs.Setup(ctx); err != nil {
-		t.Errorf("Expected no error, but got %v", err)
+		log.Fatalf("Setup expected no error, but got %v", err)
 	}
 
 	a, ok := bs.GetService(&A{}, "").(*A)
 	if !ok || a == nil {
-		t.Error("Expected A is valid")
+		log.Fatal("Expected A is valid")
 	}
 	b, ok := bs.GetService(&B{}, "").(*B)
 	if !ok || b == nil {
-		t.Error("Expected B is valid")
+		log.Fatal("Expected B is valid")
 	}
 	c, ok := bs.GetService(&C{}, "").(*C)
 	if !ok || c == nil {
-		t.Error("Expected C is valid")
+		log.Fatal("Expected C is valid")
 	}
 	d, ok := bs.GetService(&D{}, "").(*D)
 	if !ok || d == nil {
-		t.Error("Expected D is valid")
+		log.Fatal("Expected D is valid")
 	}
 
 	if b.A != a {
-		t.Errorf("Expected B.A is %p, but got %p", a, b.A)
+		log.Fatalf("Expected B.A is %p, but got %p", a, b.A)
 	}
 	if c.A != a {
-		t.Errorf("Expected C.A is %p, but got %p", a, c.A)
+		log.Fatalf("Expected C.A is %p, but got %p", a, c.A)
 	}
 	if c.B != b {
-		t.Errorf("Expected C.B is %p, but got %p", b, c.B)
+		log.Fatalf("Expected C.B is %p, but got %p", b, c.B)
 	}
 	if d.B != b {
-		t.Errorf("Expected D.B is %p, but got %p", b, d.B)
+		log.Fatalf("Expected D.B is %p, but got %p", b, d.B)
 	}
 	if d.C != c {
-		t.Errorf("Expected D.C is %p, but got %p", c, d.C)
+		log.Fatalf("Expected D.C is %p, but got %p", c, d.C)
 	}
 
 	if err := bs.Start(ctx); err != nil {
 		if !errors.Is(err, context.Canceled) {
-			t.Errorf("Expect context canceled, but got %v", err)
+			log.Fatalf("Expect context canceled, but got %v", err)
 		}
 	}
 
 	if err := bs.Stop(ctx); err != nil {
-		t.Errorf("Expected no error, but got %v", err)
+		log.Fatalf("Expected no error, but got %v", err)
 	}
 }

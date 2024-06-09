@@ -3,12 +3,16 @@ package gobs
 import (
 	"context"
 	"errors"
+
+	"github.com/traphamxuan/gobs/logger"
 )
 
 type Bootstrap struct {
-	config   Config
-	services []*Component
-	keys     map[string]*Component
+	*logger.Logger
+	// config    Config
+	scheduler *Scheduler
+	services  []*Component
+	keys      map[string]*Component
 }
 
 func NewBootstrap(configs ...Config) *Bootstrap {
@@ -16,10 +20,16 @@ func NewBootstrap(configs ...Config) *Bootstrap {
 	if len(configs) > 0 {
 		cfg = configs[0]
 	}
-	return &Bootstrap{
-		config: cfg,
-		keys:   make(map[string]*Component),
+
+	bs := &Bootstrap{
+		Logger: logger.NewLog(cfg.Logger),
+		// config: cfg,
+		keys: make(map[string]*Component),
 	}
+	bs.SetDetail(cfg.EnableLogDetail)
+	bs.SetTag("Bootstrap")
+	bs.scheduler = NewScheduler(cfg.NumOfConcurrencies, bs.Logger.Clone())
+	return bs
 }
 
 func (bs *Bootstrap) Deinit(ctx context.Context) {
@@ -58,6 +68,8 @@ func (bs *Bootstrap) AddOrPanic(s IService, args ...string) {
 }
 
 func (bs *Bootstrap) Add(s IService, status ServiceStatus, key string) error {
+	untag := bs.AddTag("Add")
+	defer untag()
 	if key == "" {
 		key = defaultServiceName(s)
 		if key == "" {
@@ -68,38 +80,46 @@ func (bs *Bootstrap) Add(s IService, status ServiceStatus, key string) error {
 	if bs.keys[key] != nil {
 		return nil
 	}
-	sBlock := NewComponent(s, key, status)
+	sBlock := NewComponent(s, key, status, bs.Logger.Clone())
 	bs.keys[key] = sBlock
 	bs.services = append(bs.services, sBlock)
-	sBlock.config = &bs.config
-	bs.LogModule(bs.config.EnableLogAdd, "Service %s is added", key)
+	bs.LogS("Service %s is added", key)
 	return nil
 }
 
-func (bs *Bootstrap) Setup(ctx context.Context) error {
-	for i := 0; i < len(bs.services); i++ {
+func (bs *Bootstrap) Init(ctx context.Context) error {
+	untag := bs.AddTag("Init")
+	defer untag()
+	totalLength := len(bs.services)
+	for i := 0; i < totalLength; i++ {
 		sb := bs.services[i]
 		if err := sb.service.Init(ctx, sb); err != nil {
 			return err
 		}
-		if err := bs.dependenciesToFollowers(sb); err != nil {
+
+		if err := bs.setupNetworkConnection(sb); err != nil {
 			return err
 		}
+		totalLength = len(bs.services)
+		bs.Log("New length after init %d, %p", totalLength, sb.OnSetupAsync)
 	}
-	return concurrenceProcesses(ctx, bs.services,
-		func(ctx context.Context, sb *Component) error {
-			err := sb.setup(ctx)
-			if err == nil {
-				bs.LogModule(bs.config.EnableLogSetup, "Service %s setup successfully", sb.name)
-			} else {
-				bs.LogModule(bs.config.EnableLogSetup, "Service %s setup failed %v", sb.name, err)
-			}
-			return err
-		},
-	)
+	bs.scheduler.Load(bs.services)
+	return nil
 }
 
-func (bs *Bootstrap) dependenciesToFollowers(sb *Component) error {
+func (bs *Bootstrap) Setup(ctx context.Context) error {
+	return bs.scheduler.Run(ctx, StatusSetup)
+}
+
+func (bs *Bootstrap) Start(ctx context.Context) error {
+	return bs.scheduler.Run(ctx, StatusStart)
+}
+
+func (bs *Bootstrap) Stop(ctx context.Context) error {
+	return bs.scheduler.Run(ctx, StatusStop)
+}
+
+func (bs *Bootstrap) setupNetworkConnection(sb *Component) error {
 	var services []IService
 	for _, service := range sb.Deps {
 		key := defaultServiceName(service)
@@ -109,7 +129,7 @@ func (bs *Bootstrap) dependenciesToFollowers(sb *Component) error {
 			bs.Add(service, StatusInit, key)
 			dComponent = bs.keys[key]
 		}
-		sb.dependOn = append(sb.dependOn, dComponent)
+		sb.following = append(sb.following, dComponent)
 		dComponent.followers = append(dComponent.followers, sb)
 		services = append(services, dComponent.service)
 	}
@@ -123,10 +143,19 @@ func (bs *Bootstrap) dependenciesToFollowers(sb *Component) error {
 		}
 		dComponent, ok := bs.keys[key]
 		if !ok {
-			bs.Add(cService.Service, StatusInit, key)
+			if cService.Instance != nil {
+				iService, ok := cService.Instance.(IService)
+				if ok {
+					bs.Add(iService, StatusInit, key)
+				} else {
+					bs.Add(cService.Service, StatusInit, key)
+				}
+			} else {
+				bs.Add(cService.Service, StatusInit, key)
+			}
 			dComponent = bs.keys[key]
 		}
-		sb.dependOn = append(sb.dependOn, dComponent)
+		sb.following = append(sb.following, dComponent)
 		dComponent.followers = append(dComponent.followers, sb)
 		extraServices = append(extraServices, CustomService{
 			Service:  dComponent.service,
@@ -136,32 +165,4 @@ func (bs *Bootstrap) dependenciesToFollowers(sb *Component) error {
 	}
 	sb.ExtraDeps = extraServices
 	return nil
-}
-
-func (bs *Bootstrap) Start(ctx context.Context) error {
-	return concurrenceProcesses(ctx, bs.services,
-		func(ctx context.Context, sb *Component) error {
-			err := sb.start(ctx)
-			if err == nil {
-				bs.LogModule(bs.config.EnableLogStart, "Service %s started", sb.name)
-			} else {
-				bs.LogModule(bs.config.EnableLogStart, "Service %s start failed %v", sb.name, err)
-			}
-			return err
-		},
-	)
-}
-
-func (bs *Bootstrap) Stop(ctx context.Context) error {
-	return concurrenceProcesses(ctx, bs.services,
-		func(ctx context.Context, sb *Component) error {
-			err := sb.stop(ctx)
-			if err == nil {
-				bs.LogModule(bs.config.EnableLogStop, "Service %s is stopped", sb.name)
-			} else {
-				bs.LogModule(bs.config.EnableLogStop, "Service %s stoped with error %v", sb.name, err)
-			}
-			return nil
-		},
-	)
 }

@@ -1,17 +1,13 @@
 package gobs
 
-type Config struct {
-	IsConcurrent    bool
-	Logger          LogFnc
-	EnableLogModule bool
-	EnableLogDetail bool
+import "github.com/traphamxuan/gobs/logger"
 
-	EnableLogAdd   bool
-	EnableLogStart bool
-	EnableLogSetup bool
-	EnableLogStop  bool
+type Config struct {
+	NumOfConcurrencies int
+	Logger             *logger.LogFnc
+	EnableLogDetail    bool
 }
 
 var DefaultConfig = Config{
-	IsConcurrent: true,
+	NumOfConcurrencies: 0,
 }
