@@ -38,6 +38,13 @@ func (sb *Component) ShouldRun(ss ServiceStatus) (err error) {
 		sb.Log("Skip service %s because it already ran", sb.name)
 		return ErrorServiceRan
 	}
+	if ss >= StatusStop && sb.status < StatusSetup {
+		sb.Log("Skip service %s because it has not been setup", sb.name)
+		sb.mu.Lock()
+		sb.status = StatusStop
+		sb.mu.Unlock()
+		return ErrorServiceRan
+	}
 	dependOn := sb.DependOn(ss)
 	for _, dep := range dependOn {
 		if dep.status < ss {
