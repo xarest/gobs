@@ -104,7 +104,7 @@ func (s *Scheduler) RunAsync(ctx context.Context, ss ServiceStatus, concurrence 
 			return
 		}
 		totalService -= 1
-		log.LogS("Finished service %s (%d)", service.name, totalService)
+		log.Log("Finished service %s (%d)", service.name, totalService)
 		wg.Done()
 		onFinish(nil)
 	}
