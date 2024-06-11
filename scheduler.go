@@ -3,6 +3,7 @@ package gobs
 import (
 	"context"
 	"errors"
+	"runtime"
 	"sync"
 
 	"github.com/traphamxuan/gobs/logger"
@@ -86,6 +87,9 @@ func (s *Scheduler) RunAsync(ctx context.Context, ss ServiceStatus, concurrence 
 	}
 	if concurrence <= 0 {
 		concurrence = len(s.services)
+		if concurrence > runtime.NumCPU() {
+			concurrence = runtime.NumCPU()
+		}
 	}
 	s.status = ss
 	totalService := len(s.services)
@@ -108,51 +112,59 @@ func (s *Scheduler) RunAsync(ctx context.Context, ss ServiceStatus, concurrence 
 		wg.Done()
 		onFinish(nil)
 	}
-
+	workerCtx, workerCancel := context.WithCancel(ctx)
 	if s.chSync != nil {
 		close(s.chSync)
 	}
-	chSync, chErrSync, cancelSync := createWorker(ctx, processor, len(s.services), 1)
-	s.chSync = chSync
+	inSync, outSync, errSync := createWorker(workerCtx, processor, len(s.services), 1)
+	s.chSync = inSync
 
 	if s.chAsync != nil {
 		close(s.chAsync)
 	}
-	chAsync, chErrAsync, cancelAsync := createWorker(ctx,
-		func(ctx context.Context, c *Component, onFinish func(error)) {
-			go processor(ctx, c, onFinish)
-		},
-		len(s.services), concurrence,
-	)
-	s.chAsync = chAsync
+	inAsync, outAsync, errAsync := createWorker(workerCtx, processor, len(s.services), concurrence)
+	s.chAsync = inAsync
 
 	defer func() {
+		close(inSync)
+		close(inAsync)
+		workerCancel()
 		untag()
-		cancelSync()
-		cancelAsync()
 	}()
 
-	ctxDone, cancel := context.WithCancel(ctx)
-	go func(cancel context.CancelFunc) {
-		defer cancel()
+	go func(ctx context.Context) {
 		sync, async := scan(s.services, s.status)
 		for _, service := range sync {
-			s.chSync <- service
+			select {
+			case <-ctx.Done():
+				return
+			case s.chSync <- service:
+			}
 		}
 		for _, service := range async {
-			s.chAsync <- service
+			select {
+			case <-ctx.Done():
+				return
+			case s.chAsync <- service:
+			}
 		}
 		wg.Wait()
-	}(cancel)
+	}(workerCtx)
 
+	serviceCompleted := 0
 	for wrapCommonError(err) == nil {
 		select {
-		case <-ctxDone.Done():
-			return nil
 		case <-ctx.Done():
 			return ctx.Err()
-		case err = <-chErrSync:
-		case err = <-chErrAsync:
+		case err = <-errSync:
+		case err = <-errAsync:
+		case <-outSync:
+			serviceCompleted++
+		case <-outAsync:
+			serviceCompleted++
+		}
+		if serviceCompleted == len(s.services) {
+			return nil
 		}
 	}
 	return err

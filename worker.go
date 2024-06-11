@@ -6,41 +6,36 @@ func createWorker(
 	ctx context.Context,
 	task func(ctx context.Context, c *Component, onFinish func(error)),
 	qBufferSize, limitThread int,
-) (queue chan *Component, chErr chan error, cancel context.CancelFunc) {
-	ctxCancel, cancel := context.WithCancel(ctx)
-	queue = make(chan *Component, qBufferSize)
-	chErr = make(chan error, qBufferSize)
-	chLimit := make(chan struct{}, limitThread)
-	go func() {
-		defer func() {
-			cancel()
-			// close(chLimit)
-			// close(chErr)
-		}()
-		for {
-			select {
-			case <-ctxCancel.Done():
-				return
-			case c := <-queue:
+) (inQueue, outQueue chan *Component, errQueue chan error) {
+	inQueue = make(chan *Component, qBufferSize)
+	outQueue = make(chan *Component, qBufferSize)
+	errQueue = make(chan error, qBufferSize)
+	for i := 0; i < limitThread; i++ {
+		go func() {
+			for {
 				select {
-				case <-ctxCancel.Done():
+				case <-ctx.Done():
 					return
-				case chLimit <- struct{}{}:
-					task(ctxCancel, c, func(err error) {
+				case c, ok := <-inQueue:
+					if !ok {
+						break
+					}
+					task(ctx, c, func(err error) {
 						if err != nil {
 							select {
-							case <-ctxCancel.Done():
-							case chErr <- err:
+							case <-ctx.Done():
+							case errQueue <- err:
 							}
-						}
-						select {
-						case <-ctxCancel.Done():
-						case <-chLimit:
+						} else {
+							select {
+							case <-ctx.Done():
+							case outQueue <- c:
+							}
 						}
 					})
 				}
 			}
-		}
-	}()
-	return queue, chErr, cancel
+		}()
+	}
+	return inQueue, outQueue, errQueue
 }

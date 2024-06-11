@@ -1,4 +1,4 @@
-package scheduler_test
+package gobs_test
 
 import (
 	"context"
@@ -24,7 +24,7 @@ func Test_SyncScheduler(t *testing.T) {
 	bs.AddDefault(new(S1))
 	bs.Init(ctx)
 	bs.Setup(ctx)
-	expectedBootOrder := []int{9, 10, 4, 5, 2, 11, 6, 12, 7, 13, 8, 3, 1}
+	expectedBootOrder := []int{11, 12, 7, 9, 10, 4, 5, 2, 6, 13, 8, 3, 1}
 	if len(setupOrder) != len(expectedBootOrder) {
 		t.Fatalf("Expected %d, but got %d", len(expectedBootOrder), len(setupOrder))
 	}

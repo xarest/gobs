@@ -1,4 +1,4 @@
-package performance_test
+package gobs_test
 
 import (
 	"context"
