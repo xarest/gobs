@@ -11,20 +11,19 @@ const (
 )
 
 type WorkerCtl struct {
-	ctx      context.Context
 	InQueue  chan *Component
 	ErrQueue chan error
 }
 
 func createWorker(
-	ctx context.Context,
+	scheduleCtx context.Context,
+	taskCtx context.Context,
 	task func(ctx context.Context, c *Component, onError func(error)),
 	qBufferSize, limitThread int,
 ) *WorkerCtl {
 	inQueue := make(chan *Component, qBufferSize)
 	errQueue := make(chan error, qBufferSize)
 	workerController := WorkerCtl{
-		ctx:      ctx,
 		InQueue:  inQueue,
 		ErrQueue: errQueue,
 	}
@@ -33,16 +32,16 @@ func createWorker(
 		go func(workerId int) {
 			for {
 				select {
-				case <-ctx.Done():
+				case <-scheduleCtx.Done():
 					return
 				case c, ok := <-inQueue:
 					if !ok {
 						break
 					}
-					task(ctx, c, func(err error) {
-						if ctx.Err() == nil {
+					task(taskCtx, c, func(err error) {
+						if scheduleCtx.Err() == nil {
 							select {
-							case <-ctx.Done():
+							case <-scheduleCtx.Done():
 							case errQueue <- err:
 							}
 						}

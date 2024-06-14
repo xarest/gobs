@@ -13,9 +13,12 @@ type Scheduler struct {
 	concurrency int
 	services    []*Component
 	status      ServiceStatus
-	chSync      chan *Component
-	chAsync     chan *Component
-	waiter      chan struct{}
+
+	ctx     context.Context
+	cancel  context.CancelFunc
+	chSync  chan *Component
+	chAsync chan *Component
+	waiter  chan struct{}
 }
 
 func NewScheduler(concurrency int, log *logger.Logger) *Scheduler {
@@ -56,10 +59,19 @@ func (s *Scheduler) Load(services []*Component) {
 func (s *Scheduler) Run(ctx context.Context, ss ServiceStatus) error {
 	untag := s.AddTag("Run")
 	defer untag()
+	s.ctx, s.cancel = context.WithCancel(ctx)
 	if s.concurrency == 0 {
 		return s.RunSync(ctx, ss)
 	}
 	return s.RunAsync(ctx, ss, s.concurrency)
+}
+
+func (s *Scheduler) Stop(ctx context.Context) {
+	untag := s.AddTag("Stop")
+	defer untag()
+	if s.cancel != nil && s.ctx.Err() == nil {
+		s.cancel()
+	}
 }
 
 func (s *Scheduler) RunSync(ctx context.Context, ss ServiceStatus) error {
@@ -109,16 +121,15 @@ func (s *Scheduler) RunAsync(ctx context.Context, ss ServiceStatus, concurrence 
 			return
 		}
 	}
-	workerCtx, workerCancel := context.WithCancel(ctx)
 
-	syncWorker := createWorker(workerCtx, processor, len(s.services), 1)
+	syncWorker := createWorker(s.ctx, ctx, processor, len(s.services), 1)
 	s.chSync = syncWorker.InQueue
 
-	asyncWorker := createWorker(workerCtx, processor, len(s.services), concurrence)
+	asyncWorker := createWorker(s.ctx, ctx, processor, len(s.services), concurrence)
 	s.chAsync = asyncWorker.InQueue
 
 	defer func() {
-		workerCancel()
+		s.cancel()
 		syncWorker.Close()
 		asyncWorker.Close()
 		close(s.waiter)
@@ -131,14 +142,14 @@ func (s *Scheduler) RunAsync(ctx context.Context, ss ServiceStatus, concurrence 
 	sync, async := scan(s.services, s.status)
 	for _, service := range sync {
 		select {
-		case <-ctx.Done():
+		case <-s.ctx.Done():
 			return
 		case s.chSync <- service:
 		}
 	}
 	for _, service := range async {
 		select {
-		case <-ctx.Done():
+		case <-s.ctx.Done():
 			return
 		case s.chAsync <- service:
 		}
@@ -146,8 +157,8 @@ func (s *Scheduler) RunAsync(ctx context.Context, ss ServiceStatus, concurrence 
 
 	for wrapCommonError(err) == nil {
 		select {
-		case <-ctx.Done():
-			return ctx.Err()
+		case <-s.ctx.Done():
+			return s.ctx.Err()
 		case err = <-syncWorker.ErrQueue:
 		case err = <-asyncWorker.ErrQueue:
 		case s.waiter <- struct{}{}:
@@ -164,11 +175,19 @@ func (s *Scheduler) executeParallel(ctx context.Context, service *Component) (er
 	// untag := s.AddTag("executeParallel")
 	// defer untag()
 	onSync := func(ctx context.Context, dep *Component) error {
-		s.chSync <- dep
+		select {
+		case <-s.ctx.Done():
+			return s.ctx.Err()
+		case s.chSync <- dep:
+		}
 		return nil
 	}
 	onAsync := func(ctx context.Context, dep *Component) error {
-		s.chAsync <- dep
+		select {
+		case <-s.ctx.Done():
+			return s.ctx.Err()
+		case s.chAsync <- dep:
+		}
 		return nil
 	}
 	return s.execute(ctx, service, &onSync, &onAsync)
@@ -200,8 +219,8 @@ func (s *Scheduler) execute(
 		if err == nil && s.waiter != nil {
 			s.Log("Trying to notify about service %s", service.name)
 			select {
-			case <-ctx.Done():
-				return ctx.Err()
+			case <-s.ctx.Done():
+				return s.ctx.Err()
 			case <-s.waiter:
 			}
 		}

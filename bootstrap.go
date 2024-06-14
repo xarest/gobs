@@ -10,9 +10,10 @@ import (
 type Bootstrap struct {
 	*logger.Logger
 	// config    Config
-	scheduler *Scheduler
-	services  []*Component
-	keys      map[string]*Component
+	concurrencies int
+	scheduler     *Scheduler
+	services      []*Component
+	keys          map[string]*Component
 }
 
 func NewBootstrap(configs ...Config) *Bootstrap {
@@ -24,11 +25,11 @@ func NewBootstrap(configs ...Config) *Bootstrap {
 	bs := &Bootstrap{
 		Logger: logger.NewLog(cfg.Logger),
 		// config: cfg,
-		keys: make(map[string]*Component),
+		concurrencies: cfg.NumOfConcurrencies,
+		keys:          make(map[string]*Component),
 	}
 	bs.SetDetail(cfg.EnableLogDetail)
 	bs.SetTag("Bootstrap")
-	bs.scheduler = NewScheduler(cfg.NumOfConcurrencies, bs.Logger.Clone())
 	return bs
 }
 
@@ -103,20 +104,32 @@ func (bs *Bootstrap) Init(ctx context.Context) error {
 		totalLength = len(bs.services)
 		bs.Log("New length after init %d, %p", totalLength, sb.OnSetupAsync)
 	}
-	bs.scheduler.Load(bs.services)
 	return nil
 }
 
 func (bs *Bootstrap) Setup(ctx context.Context) error {
-	return bs.scheduler.Run(ctx, StatusSetup)
+	scheduler := NewScheduler(bs.concurrencies, bs.Logger.Clone())
+	bs.scheduler = scheduler
+	scheduler.Load(bs.services)
+	return scheduler.Run(ctx, StatusSetup)
 }
 
 func (bs *Bootstrap) Start(ctx context.Context) error {
-	return bs.scheduler.Run(ctx, StatusStart)
+	scheduler := NewScheduler(0, bs.Logger.Clone())
+	bs.scheduler = scheduler
+	scheduler.Load(bs.services)
+	return scheduler.Run(ctx, StatusStart)
 }
 
 func (bs *Bootstrap) Stop(ctx context.Context) error {
-	return bs.scheduler.Run(ctx, StatusStop)
+	scheduler := NewScheduler(bs.concurrencies, bs.Logger.Clone())
+	bs.scheduler = scheduler
+	scheduler.Load(bs.services)
+	return scheduler.Run(ctx, StatusStop)
+}
+
+func (bs *Bootstrap) Break(ctx context.Context) {
+	bs.scheduler.Stop(ctx)
 }
 
 func (bs *Bootstrap) setupNetworkConnection(sb *Component) error {
