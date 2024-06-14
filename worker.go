@@ -2,16 +2,35 @@ package gobs
 
 import "context"
 
+type status int
+
+const (
+	workerIdle status = iota
+	workerBusy
+	workerWaiting
+)
+
+type WorkerCtl struct {
+	ctx      context.Context
+	InQueue  chan *Component
+	ErrQueue chan error
+}
+
 func createWorker(
 	ctx context.Context,
-	task func(ctx context.Context, c *Component, onFinish func(error)),
+	task func(ctx context.Context, c *Component, onError func(error)),
 	qBufferSize, limitThread int,
-) (inQueue, outQueue chan *Component, errQueue chan error) {
-	inQueue = make(chan *Component, qBufferSize)
-	outQueue = make(chan *Component, qBufferSize)
-	errQueue = make(chan error, qBufferSize)
+) *WorkerCtl {
+	inQueue := make(chan *Component, qBufferSize)
+	errQueue := make(chan error, qBufferSize)
+	workerController := WorkerCtl{
+		ctx:      ctx,
+		InQueue:  inQueue,
+		ErrQueue: errQueue,
+	}
+
 	for i := 0; i < limitThread; i++ {
-		go func() {
+		go func(workerId int) {
 			for {
 				select {
 				case <-ctx.Done():
@@ -21,21 +40,21 @@ func createWorker(
 						break
 					}
 					task(ctx, c, func(err error) {
-						if err != nil {
+						if ctx.Err() == nil {
 							select {
 							case <-ctx.Done():
 							case errQueue <- err:
-							}
-						} else {
-							select {
-							case <-ctx.Done():
-							case outQueue <- c:
 							}
 						}
 					})
 				}
 			}
-		}()
+		}(i)
 	}
-	return inQueue, outQueue, errQueue
+	return &workerController
+}
+
+func (w *WorkerCtl) Close() {
+	close(w.ErrQueue)
+	close(w.InQueue)
 }

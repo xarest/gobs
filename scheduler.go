@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"runtime"
-	"sync"
 
 	"github.com/traphamxuan/gobs/logger"
 )
@@ -16,6 +15,7 @@ type Scheduler struct {
 	status      ServiceStatus
 	chSync      chan *Component
 	chAsync     chan *Component
+	waiter      chan struct{}
 }
 
 func NewScheduler(concurrency int, log *logger.Logger) *Scheduler {
@@ -85,86 +85,76 @@ func (s *Scheduler) RunAsync(ctx context.Context, ss ServiceStatus, concurrence 
 	if s.status >= ss {
 		return nil
 	}
+	totalServices := s.countServiceRun(ss)
 	if concurrence <= 0 {
-		concurrence = len(s.services)
+		concurrence = totalServices
 		if concurrence > runtime.NumCPU() {
 			concurrence = runtime.NumCPU()
 		}
 	}
 	s.status = ss
-	totalService := len(s.services)
-	var wg sync.WaitGroup
-	wg.Add(totalService)
+	s.waiter = make(chan struct{}, concurrence)
+	for i := 0; i < concurrence; i++ {
+		s.waiter <- struct{}{}
+	}
 
-	processor := func(ctx context.Context, service *Component, onFinish func(error)) {
+	processor := func(ctx context.Context, service *Component, onError func(error)) {
 		log := s.Logger.Clone()
 		untag := log.AddTag(compactName(service.name))
 		defer func() {
 			untag()
 		}()
-		log.Log("Start service %s (%d)", service.name, totalService)
 		if err := s.executeParallel(ctx, service); err != nil {
-			onFinish(err)
+			onError(err)
 			return
 		}
-		totalService -= 1
-		log.Log("Finished service %s (%d)", service.name, totalService)
-		wg.Done()
-		onFinish(nil)
 	}
 	workerCtx, workerCancel := context.WithCancel(ctx)
-	if s.chSync != nil {
-		close(s.chSync)
-	}
-	inSync, outSync, errSync := createWorker(workerCtx, processor, len(s.services), 1)
-	s.chSync = inSync
 
-	if s.chAsync != nil {
-		close(s.chAsync)
-	}
-	inAsync, outAsync, errAsync := createWorker(workerCtx, processor, len(s.services), concurrence)
-	s.chAsync = inAsync
+	syncWorker := createWorker(workerCtx, processor, len(s.services), 1)
+	s.chSync = syncWorker.InQueue
+
+	asyncWorker := createWorker(workerCtx, processor, len(s.services), concurrence)
+	s.chAsync = asyncWorker.InQueue
 
 	defer func() {
-		close(inSync)
-		close(inAsync)
 		workerCancel()
+		syncWorker.Close()
+		asyncWorker.Close()
+		close(s.waiter)
+		s.chSync = nil
+		s.chAsync = nil
+		s.waiter = nil
 		untag()
 	}()
 
-	go func(ctx context.Context) {
-		sync, async := scan(s.services, s.status)
-		for _, service := range sync {
-			select {
-			case <-ctx.Done():
-				return
-			case s.chSync <- service:
-			}
+	sync, async := scan(s.services, s.status)
+	for _, service := range sync {
+		select {
+		case <-ctx.Done():
+			return
+		case s.chSync <- service:
 		}
-		for _, service := range async {
-			select {
-			case <-ctx.Done():
-				return
-			case s.chAsync <- service:
-			}
+	}
+	for _, service := range async {
+		select {
+		case <-ctx.Done():
+			return
+		case s.chAsync <- service:
 		}
-		wg.Wait()
-	}(workerCtx)
+	}
 
-	serviceCompleted := 0
 	for wrapCommonError(err) == nil {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case err = <-errSync:
-		case err = <-errAsync:
-		case <-outSync:
-			serviceCompleted++
-		case <-outAsync:
-			serviceCompleted++
-		}
-		if serviceCompleted == len(s.services) {
-			return nil
+		case err = <-syncWorker.ErrQueue:
+		case err = <-asyncWorker.ErrQueue:
+		case s.waiter <- struct{}{}:
+			totalServices--
+			if totalServices == 0 {
+				return nil
+			}
 		}
 	}
 	return err
@@ -187,13 +177,10 @@ func (s *Scheduler) executeParallel(ctx context.Context, service *Component) (er
 func (s *Scheduler) executeAll(ctx context.Context, service *Component) (err error) {
 	untag := s.AddTag("executeAll")
 	defer untag()
-	onSync := func(ctx context.Context, dep *Component) error {
+	process := func(ctx context.Context, dep *Component) error {
 		return s.executeAll(ctx, dep)
 	}
-	onAsync := func(ctx context.Context, dep *Component) error {
-		return s.executeAll(ctx, dep)
-	}
-	return s.execute(ctx, service, &onSync, &onAsync)
+	return s.execute(ctx, service, &process, &process)
 }
 
 func (s *Scheduler) execute(
@@ -209,6 +196,14 @@ func (s *Scheduler) execute(
 		s.Log("Running service %s at status %s", service.name, s.status.String())
 		if err = service.Run(ctx, s.status); s.logRun(service, err) != nil {
 			return err
+		}
+		if err == nil && s.waiter != nil {
+			s.Log("Trying to notify about service %s", service.name)
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-s.waiter:
+			}
 		}
 	} else if errors.Is(err, ErrorServiceNotReady) {
 		s.Log("Service %s is not ready to run at status %s", service.name, s.status.String())
@@ -236,6 +231,20 @@ func (s *Scheduler) execute(
 		}
 	}
 	return err
+}
+
+func (s *Scheduler) countServiceRun(ss ServiceStatus) int {
+	count := 0
+	for _, service := range s.services {
+		if service.status >= ss {
+			continue
+		}
+		if service.status < StatusSetup && ss >= StatusStop {
+			continue
+		}
+		count++
+	}
+	return count
 }
 
 func (s *Scheduler) logRun(service *Component, err error) error {
