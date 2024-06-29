@@ -17,24 +17,31 @@ type D struct {
 
 var _ gobs.IService = (*D)(nil)
 
-func (d *D) Init(ctx context.Context, co *gobs.Component) error {
+func (d *D) Init(ctx context.Context, co *gobs.Service) error {
 	co.Deps = []gobs.IService{&B{}, &C{}} // Define dependencies here
-	onSetup := func(ctx context.Context, deps []gobs.IService, extraDeps []gobs.CustomService) error {
+	co.OnSetup = func(ctx context.Context, deps []gobs.IService, extraDeps []gobs.CustomService) error {
 		// After B & C finish setting up, this callback will be called
 		d.B = deps[0].(*B)
 		d.C = deps[1].(*C)
 		// Other custom setup/configration go here
 		return nil
 	}
-	co.OnSetup = &onSetup
+	co.AsyncMode[common.StatusSetup] = true // This line will make OnSetup method be called in concurrent context without blocking others.
 	return nil
 }
 ```
 then put this instance to the main thread at init step. All other components required this instance will find this instance with the same manner.
 ```go
+ctx := context.BackGround()
 sm := gobs.NewBootstrap()
 bs.AddDefault(&D{})
-bs.Setup(context.BackGround())
+bs.Init(ctx)
+bs.Setup(ctx)
+bs.Start(ctx)
+// ...
+bs.Interrupt()
+// ...
+bs.Stop(ctx)
 ```
 With dependencies:
 - B -> A

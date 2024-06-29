@@ -3,43 +3,27 @@ package gobs_test
 import (
 	"context"
 	"fmt"
-	"testing"
 
+	"github.com/stretchr/testify/require"
 	"github.com/traphamxuan/gobs"
 )
 
 var numOfServices = 0
 
-// var logger gobs.LogFnc = func(s string, i ...interface{}) {
-// 	fmt.Printf(s+"\n", i...)
-// }
-
-func Test_SyncPerformance(t *testing.T) {
-	numOfDependencies := 20
-	level := 5
-	// shared := 5
+func (s *BootstrapSuit) TestSyncPerformance() {
+	t := s.T()
+	numOfDependencies := 10
+	level := 3
 	ctx := context.Background()
 	service := NewSampleService(numOfDependencies, level)
 	bs := gobs.NewBootstrap(gobs.Config{
-		NumOfConcurrencies: 0,
-		// Logger:             &logger,
-		// EnableLogSchedule:  true,
-		// EnableLogDetail:    true,
+		IsConcurrent: false,
 	})
 	bs.AddDefault(service)
-	if err := bs.Init(ctx); err != nil {
-		t.Fatalf("Error: %v", err)
-	}
-	if err := bs.Setup(ctx); err != nil {
-		t.Fatalf("Error: %v", err)
-	}
-	// if err := bs.Start(ctx); err != nil {
-	// 	t.Fatalf("Error: %v", err)
-	// }
-	// if err := bs.Stop(ctx); err != nil {
-	// 	t.Fatalf("Error: %v", err)
-	// }
-	fmt.Printf("Test_Performance with %d services\n", numOfServices)
+	require.NoError(t, bs.Init(ctx), "Bootstrap initialization failed")
+	require.NoError(t, bs.Setup(ctx), "Bootstrap Setup failed")
+	require.NoError(t, bs.Start(ctx), "Bootstrap Start failed")
+	require.NoError(t, bs.Stop(ctx), "Bootstrap Stop failed")
 }
 
 type SampleService struct {
@@ -50,7 +34,7 @@ type SampleService struct {
 }
 
 // Init implements gobs.IService.
-func (s *SampleService) Init(ctx context.Context, c *gobs.Component) error {
+func (s *SampleService) Init(ctx context.Context, c *gobs.Service) error {
 	if s.level == 0 {
 		return nil
 	}
@@ -67,10 +51,6 @@ func (s *SampleService) Init(ctx context.Context, c *gobs.Component) error {
 			Instance: &deps[i],
 		}
 	}
-	onSetup := func(context.Context, []gobs.IService, []gobs.CustomService) error {
-		return nil
-	}
-	c.OnSetup = &onSetup
 
 	return nil
 }

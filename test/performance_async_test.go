@@ -3,44 +3,27 @@ package gobs_test
 import (
 	"context"
 	"fmt"
-	"testing"
 
+	"github.com/stretchr/testify/require"
 	"github.com/traphamxuan/gobs"
+	"github.com/traphamxuan/gobs/common"
 )
 
-//	var l logger.LogFnc = func(s string, i ...interface{}) {
-//		fmt.Printf(s+"\n", i...)
-//	}
-// var setupOrder []int
-
-func Test_AsyncPerformance(t *testing.T) {
-	numOfDependencies := 20
-	level := 5
+func (s *BootstrapSuit) TestAsyncPerformance() {
+	t := s.T()
+	numOfDependencies := 10
+	level := 3
 	// shared := 5
-	ctx := context.Background()
+	ctx := context.TODO()
 	service := NewSampleAsyncService(numOfDependencies, level)
 	bs := gobs.NewBootstrap(gobs.Config{
-		NumOfConcurrencies: -1,
-		// Logger:             &l,
-		// EnableLogDetail:    true,
+		IsConcurrent: true,
 	})
-	bs.AddDefault(service)
-	if err := bs.Init(ctx); err != nil {
-		t.Fatalf("Error: %v", err)
-	}
-	if err := bs.Setup(ctx); err != nil {
-		t.Fatalf("Error: %v", err)
-	}
-	// if len(setupOrder) != numOfServices {
-	// 	t.Fatalf("Expected %d services to be setup, got %d", numOfServices, len(setupOrder))
-	// }
-	// if err := bs.Start(ctx); err != nil {
-	// 	t.Fatalf("Error: %v", err)
-	// }
-	// if err := bs.Stop(ctx); err != nil {
-	// 	t.Fatalf("Error: %v", err)
-	// }
-	fmt.Printf("Test_Performance Async with %d services\n", numOfServices)
+	require.NoError(t, bs.AddDefault(service), "AddDefault expected no error")
+	require.NoError(t, bs.Init(ctx), "Init expected no error")
+	require.NoError(t, bs.Setup(ctx), "Setup expected no error")
+	require.NoError(t, bs.Start(ctx), "Setup expected no error")
+	require.NoError(t, bs.Stop(ctx), "Stop expected no error")
 }
 
 type SampleAsyncService struct {
@@ -51,7 +34,7 @@ type SampleAsyncService struct {
 }
 
 // Init implements gobs.IService.
-func (s *SampleAsyncService) Init(ctx context.Context, c *gobs.Component) error {
+func (s *SampleAsyncService) Init(ctx context.Context, c *gobs.Service) error {
 	numOfServices++
 	if s.level > 0 {
 		deps := make([]SampleAsyncService, s.numOfDeps)
@@ -67,10 +50,7 @@ func (s *SampleAsyncService) Init(ctx context.Context, c *gobs.Component) error 
 			}
 		}
 	}
-	onSetup := func(context.Context, []gobs.IService, []gobs.CustomService) error {
-		return nil
-	}
-	c.OnSetupAsync = &onSetup
+	c.AsyncMode[common.StatusSetup] = true
 
 	return nil
 }

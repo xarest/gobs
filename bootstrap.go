@@ -4,16 +4,19 @@ import (
 	"context"
 	"errors"
 
+	"github.com/traphamxuan/gobs/common"
 	"github.com/traphamxuan/gobs/logger"
+	"github.com/traphamxuan/gobs/scheduler"
+	"github.com/traphamxuan/gobs/types"
+	"github.com/traphamxuan/gobs/utils"
 )
 
 type Bootstrap struct {
 	*logger.Logger
-	// config    Config
-	concurrencies int
-	scheduler     *Scheduler
-	services      []*Component
-	keys          map[string]*Component
+	IsConcurrent bool
+	schedulers   map[common.ServiceStatus]*scheduler.Scheduler
+	services     []*Service
+	keys         map[string]*Service
 }
 
 func NewBootstrap(configs ...Config) *Bootstrap {
@@ -25,8 +28,9 @@ func NewBootstrap(configs ...Config) *Bootstrap {
 	bs := &Bootstrap{
 		Logger: logger.NewLog(cfg.Logger),
 		// config: cfg,
-		concurrencies: cfg.NumOfConcurrencies,
-		keys:          make(map[string]*Component),
+		schedulers:   make(map[common.ServiceStatus]*scheduler.Scheduler, common.StatusStop+1),
+		IsConcurrent: cfg.IsConcurrent,
+		keys:         make(map[string]*Service),
 	}
 	bs.SetDetail(cfg.EnableLogDetail)
 	bs.SetTag("Bootstrap")
@@ -44,22 +48,23 @@ func (bs *Bootstrap) GetService(service IService, key string) IService {
 			return nil
 		}
 		if cp, ok := bs.keys[key]; ok {
-			return cp.service
+			return cp.instance
 		}
 		return nil
 	}
-	key = defaultServiceName(service)
+	key = utils.DefaultServiceName(service)
+	bs.Log("Get service with key %s", key)
 	if cp, ok := bs.keys[key]; ok {
-		return cp.service
+		return cp.instance
 	}
 	return nil
 }
 
 func (bs *Bootstrap) AddDefault(s IService, args ...string) error {
 	if len(args) > 0 {
-		return bs.Add(s, StatusInit, args[0])
+		return bs.Add(s, common.StatusNone, args[0])
 	}
-	return bs.Add(s, StatusInit, "")
+	return bs.Add(s, common.StatusNone, "")
 }
 
 func (bs *Bootstrap) AddOrPanic(s IService, args ...string) {
@@ -68,11 +73,11 @@ func (bs *Bootstrap) AddOrPanic(s IService, args ...string) {
 	}
 }
 
-func (bs *Bootstrap) Add(s IService, status ServiceStatus, key string) error {
+func (bs *Bootstrap) Add(s IService, status common.ServiceStatus, key string) error {
 	untag := bs.AddTag("Add")
 	defer untag()
 	if key == "" {
-		key = defaultServiceName(s)
+		key = utils.DefaultServiceName(s)
 		if key == "" {
 			return errors.New("service name is empty")
 		}
@@ -81,10 +86,10 @@ func (bs *Bootstrap) Add(s IService, status ServiceStatus, key string) error {
 	if bs.keys[key] != nil {
 		return nil
 	}
-	sBlock := NewComponent(s, key, status, bs.Logger.Clone())
+	sBlock := NewService(s, key, status, bs.Logger.Clone())
 	bs.keys[key] = sBlock
 	bs.services = append(bs.services, sBlock)
-	bs.LogS("Service %s is added", key)
+	bs.LogS("Service %s is added with status %s", key, status.String())
 	return nil
 }
 
@@ -92,59 +97,95 @@ func (bs *Bootstrap) Init(ctx context.Context) error {
 	untag := bs.AddTag("Init")
 	defer untag()
 	totalLength := len(bs.services)
+	var tasks []types.ITask
 	for i := 0; i < totalLength; i++ {
 		sb := bs.services[i]
-		if err := sb.service.Init(ctx, sb); err != nil {
+		if err := sb.instance.Init(ctx, sb); err != nil {
 			return err
 		}
 
 		if err := bs.setupNetworkConnection(sb); err != nil {
 			return err
 		}
+		tasks = append(tasks, sb)
 		totalLength = len(bs.services)
-		bs.Log("New length after init %d, %p", totalLength, sb.OnSetupAsync)
 	}
-	return nil
+	return bs.execute(ctx, common.StatusInit, tasks)
 }
 
 func (bs *Bootstrap) Setup(ctx context.Context) error {
-	scheduler := NewScheduler(bs.concurrencies, bs.Logger.Clone())
-	bs.scheduler = scheduler
-	scheduler.Load(bs.services)
-	return scheduler.Run(ctx, StatusSetup)
+	sched, ok := bs.schedulers[common.StatusInit]
+	if !ok {
+		return errors.New("Init is not executed")
+	}
+	sched.Interrupt()
+	tasks, err := sched.Release()
+	if err != nil {
+		bs.Logger.Log("Previous state %s hash error %s", common.StatusInit.String(), err.Error())
+	}
+	return bs.execute(ctx, common.StatusSetup, tasks)
 }
 
 func (bs *Bootstrap) Start(ctx context.Context) error {
-	scheduler := NewScheduler(0, bs.Logger.Clone())
-	bs.scheduler = scheduler
-	scheduler.Load(bs.services)
-	return scheduler.Run(ctx, StatusStart)
+	sched, ok := bs.schedulers[common.StatusSetup]
+	if !ok {
+		return errors.New("Init is not executed")
+	}
+	sched.Interrupt()
+	tasks, err := sched.Release()
+	if err != nil {
+		bs.Logger.Log("Previous state %s hash error %s", common.StatusSetup.String(), err.Error())
+	}
+	return bs.execute(ctx, common.StatusStart, tasks)
 }
 
 func (bs *Bootstrap) Stop(ctx context.Context) error {
-	scheduler := NewScheduler(bs.concurrencies, bs.Logger.Clone())
-	bs.scheduler = scheduler
-	scheduler.Load(bs.services)
-	return scheduler.Run(ctx, StatusStop)
+	if bs.schedulers[common.StatusStart] != nil {
+		bs.schedulers[common.StatusStart].Interrupt()
+	}
+	sched, ok := bs.schedulers[common.StatusSetup]
+	if !ok {
+		return errors.New("Init is not executed")
+	}
+	tasks, err := sched.Release()
+	if err != nil {
+		bs.Logger.Log("Previous state %s hash error %s", common.StatusSetup.String(), err.Error())
+	}
+	return bs.execute(ctx, common.StatusStop, tasks)
 }
 
 func (bs *Bootstrap) Break(ctx context.Context) {
-	bs.scheduler.Stop(ctx)
+	for k := range bs.schedulers {
+		bs.schedulers[k].Interrupt()
+	}
 }
 
-func (bs *Bootstrap) setupNetworkConnection(sb *Component) error {
+func (bs *Bootstrap) execute(ctx context.Context, ss common.ServiceStatus, tasks []types.ITask) (err error) {
+	bs.Log("Execute %s with %d tasks", ss.String(), len(tasks))
+	sched := scheduler.NewScheduler(ctx, bs.Logger.Clone(), tasks, ss)
+
+	if bs.IsConcurrent {
+		_, err = sched.RunAsync(ctx)
+	} else {
+		_, err = sched.RunSync(ctx)
+	}
+	bs.schedulers[ss] = sched
+	return err
+}
+
+func (bs *Bootstrap) setupNetworkConnection(sb *Service) error {
 	var services []IService
 	for _, service := range sb.Deps {
-		key := defaultServiceName(service)
+		key := utils.DefaultServiceName(service)
 
-		dComponent, ok := bs.keys[key]
+		dService, ok := bs.keys[key]
 		if !ok {
-			bs.Add(service, StatusInit, key)
-			dComponent = bs.keys[key]
+			bs.Add(service, common.StatusNone, key)
+			dService = bs.keys[key]
 		}
-		sb.following = append(sb.following, dComponent)
-		dComponent.followers = append(dComponent.followers, sb)
-		services = append(services, dComponent.service)
+		sb.following = append(sb.following, dService)
+		dService.followers = append(dService.followers, sb)
+		services = append(services, dService.instance)
 	}
 	sb.Deps = services
 
@@ -152,30 +193,31 @@ func (bs *Bootstrap) setupNetworkConnection(sb *Component) error {
 	for _, cService := range sb.ExtraDeps {
 		key := cService.Name
 		if key == "" {
-			key = defaultServiceName(cService.Service)
+			key = utils.DefaultServiceName(cService.Service)
 		}
-		dComponent, ok := bs.keys[key]
+		dService, ok := bs.keys[key]
 		if !ok {
 			if cService.Instance != nil {
 				iService, ok := cService.Instance.(IService)
 				if ok {
-					bs.Add(iService, StatusInit, key)
+					bs.Add(iService, common.StatusNone, key)
 				} else {
-					bs.Add(cService.Service, StatusInit, key)
+					bs.Add(cService.Service, common.StatusNone, key)
 				}
 			} else {
-				bs.Add(cService.Service, StatusInit, key)
+				bs.Add(cService.Service, common.StatusNone, key)
 			}
-			dComponent = bs.keys[key]
+			dService = bs.keys[key]
 		}
-		sb.following = append(sb.following, dComponent)
-		dComponent.followers = append(dComponent.followers, sb)
+		sb.following = append(sb.following, dService)
+		dService.followers = append(dService.followers, sb)
 		extraServices = append(extraServices, CustomService{
-			Service:  dComponent.service,
+			Service:  dService.instance,
 			Name:     key,
 			Instance: cService.Instance,
 		})
 	}
 	sb.ExtraDeps = extraServices
+	bs.Log("After setting up %v %v", sb.Deps, sb.ExtraDeps)
 	return nil
 }

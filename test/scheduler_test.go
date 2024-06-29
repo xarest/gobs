@@ -2,35 +2,210 @@ package gobs_test
 
 import (
 	"context"
-	"fmt"
 	"testing"
+	"time"
 
-	"github.com/traphamxuan/gobs"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
+	"github.com/traphamxuan/gobs/common"
 	"github.com/traphamxuan/gobs/logger"
+	"github.com/traphamxuan/gobs/scheduler"
+	"github.com/traphamxuan/gobs/types"
 )
 
-func Test_SyncScheduler(t *testing.T) {
-	setupOrder = []int{}
-	fmt.Println("Start test Test_SyncScheduler")
-	var logger logger.LogFnc = func(s string, i ...interface{}) {
-		fmt.Printf(s+"\n", i...)
+type SchedulerSuit struct {
+	suite.Suite
+}
+
+func TestScheduler(t *testing.T) {
+	suite.Run(t, new(SchedulerSuit))
+}
+
+// func (s *SchedulerSuit) SetupSuite() {
+// 	fmt.Println("SchedulerSuit/SetupSuite")
+// }
+
+// func (s *SchedulerSuit) TearDownSuite() {
+// 	fmt.Println("SchedulerSuit/TearDownSuite")
+// }
+
+// func (s *SchedulerSuit) SetupTest() {
+// 	fmt.Println("SchedulerSuit/SetupTest")
+// }
+
+// func (s *SchedulerSuit) TearDownTest() {
+// 	fmt.Println("SchedulerSuit/TearDownTest")
+// }
+
+type MockTask struct {
+	following []*MockTask
+	followers []*MockTask
+	name      string
+	isAsync   bool
+	delay     time.Duration
+}
+
+func (m *MockTask) Run(ctx context.Context, status common.ServiceStatus) error {
+	time.Sleep(m.delay)
+	return nil
+}
+func (m *MockTask) DependOn(status common.ServiceStatus) []types.ITask {
+	out := make([]types.ITask, 0, len(m.following))
+	for _, f := range m.following {
+		out = append(out, f)
 	}
-	bs := gobs.NewBootstrap(gobs.Config{
-		NumOfConcurrencies: 0,
-		Logger:             &logger,
-		EnableLogDetail:    true,
-	})
-	ctx := context.Background()
-	bs.AddDefault(new(S1))
-	bs.Init(ctx)
-	bs.Setup(ctx)
-	expectedBootOrder := []int{11, 12, 7, 9, 10, 4, 5, 2, 6, 13, 8, 3, 1}
-	if len(setupOrder) != len(expectedBootOrder) {
-		t.Fatalf("Expected %d, but got %d", len(expectedBootOrder), len(setupOrder))
+	return out
+}
+
+func (m *MockTask) Followers(status common.ServiceStatus) []types.ITask {
+	out := make([]types.ITask, 0, len(m.followers))
+	for _, f := range m.followers {
+		out = append(out, f)
 	}
-	for i, orderId := range setupOrder {
-		if orderId != expectedBootOrder[i] {
-			t.Errorf("Expected %d, but got %d", expectedBootOrder[i], orderId)
-		}
-	}
+	return out
+}
+
+func (m *MockTask) IsRunAsync(status common.ServiceStatus) bool {
+	return m.isAsync
+}
+
+func (m *MockTask) Name() string {
+	return m.name
+}
+
+var _ types.ITask = &MockTask{}
+
+func (s *SchedulerSuit) TestSchedulerSync() {
+	var (
+		taskA = MockTask{name: "D"}
+		taskB = MockTask{name: "C", following: []*MockTask{&taskA}}
+		taskC = MockTask{name: "B", following: []*MockTask{&taskB}}
+		taskD = MockTask{name: "A", following: []*MockTask{&taskB, &taskA}}
+	)
+	taskA.followers = []*MockTask{&taskB, &taskD}
+	taskB.followers = []*MockTask{&taskC, &taskD}
+	taskC.followers = []*MockTask{&taskD}
+	scheduler := scheduler.NewScheduler(
+		context.TODO(),
+		logger.NewLog(nil),
+		[]types.ITask{
+			&taskA, &taskB, &taskC, &taskD,
+		},
+		common.StatusSetup,
+	)
+	results, err := scheduler.RunSync(context.TODO())
+	require.Nil(s.T(), err)
+	require.Equal(s.T(), 4, len(results))
+	assert.Equal(s.T(), "D", results[0].Name())
+	assert.Equal(s.T(), "C", results[1].Name())
+	assert.Equal(s.T(), "B", results[2].Name())
+	assert.Equal(s.T(), "A", results[3].Name())
+}
+
+func (s *SchedulerSuit) TestSchedulerAsyncWithoutDelay() {
+	var (
+		taskA = MockTask{name: "A"}
+		taskB = MockTask{name: "B", following: []*MockTask{&taskA}}
+		taskC = MockTask{name: "C", following: []*MockTask{&taskB}}
+		taskD = MockTask{name: "D", following: []*MockTask{&taskB, &taskA}}
+	)
+	taskA.followers = []*MockTask{&taskB, &taskD}
+	taskB.followers = []*MockTask{&taskC, &taskD}
+	taskC.followers = []*MockTask{&taskD}
+	scheduler := scheduler.NewScheduler(
+		context.TODO(),
+		logger.NewLog(nil),
+		[]types.ITask{
+			&taskA, &taskB, &taskC, &taskD,
+		},
+		common.StatusSetup,
+	)
+	results, err := scheduler.RunAsync(context.TODO())
+	require.Nil(s.T(), err)
+	require.Equal(s.T(), 4, len(results))
+	assert.Equal(s.T(), "A", results[0].Name())
+	assert.Equal(s.T(), "B", results[1].Name())
+	assert.Equal(s.T(), "C", results[2].Name())
+	assert.Equal(s.T(), "D", results[3].Name())
+}
+
+func (s *SchedulerSuit) TestSchedulerAsyncWithDelay() {
+	var (
+		taskE = MockTask{name: "E"}
+		taskA = MockTask{name: "A", following: []*MockTask{&taskE}}
+		taskB = MockTask{name: "B", following: []*MockTask{&taskA, &taskE}}
+		taskC = MockTask{name: "C", following: []*MockTask{&taskB}, isAsync: true, delay: 1 * time.Second}
+		taskD = MockTask{name: "D", following: []*MockTask{&taskB, &taskA}}
+	)
+	taskE.followers = []*MockTask{&taskA, &taskB}
+	taskA.followers = []*MockTask{&taskB, &taskD}
+	taskB.followers = []*MockTask{&taskC, &taskD}
+	taskC.followers = []*MockTask{&taskD}
+	scheduler := scheduler.NewScheduler(
+		context.TODO(),
+		logger.NewLog(nil),
+		[]types.ITask{
+			&taskA, &taskB, &taskC, &taskD, &taskE,
+		},
+		common.StatusSetup,
+	)
+	results, err := scheduler.RunAsync(context.TODO())
+	require.Nil(s.T(), err)
+	require.Equal(s.T(), 5, len(results))
+	assert.Equal(s.T(), "E", results[0].Name())
+	assert.Equal(s.T(), "A", results[1].Name())
+	assert.Equal(s.T(), "B", results[2].Name())
+	assert.Equal(s.T(), "D", results[3].Name())
+	assert.Equal(s.T(), "C", results[4].Name())
+}
+
+func (s *SchedulerSuit) TestSchedulerWithAsyncInterruptAndStop() {
+	var (
+		taskE = MockTask{name: "E"}
+		taskA = MockTask{name: "A", following: []*MockTask{&taskE}}
+		taskB = MockTask{name: "B", following: []*MockTask{&taskA, &taskE}}
+		taskC = MockTask{name: "C", following: []*MockTask{&taskB}, isAsync: true, delay: 1 * time.Second}
+		taskD = MockTask{name: "D", following: []*MockTask{&taskB, &taskA}}
+	)
+	taskE.followers = []*MockTask{&taskA, &taskB}
+	taskA.followers = []*MockTask{&taskB, &taskD}
+	taskB.followers = []*MockTask{&taskC, &taskD}
+	taskC.followers = []*MockTask{&taskD}
+	sched := scheduler.NewScheduler(
+		context.TODO(),
+		logger.NewLog(nil),
+		[]types.ITask{
+			&taskA, &taskB, &taskC, &taskD, &taskE,
+		},
+		common.StatusSetup,
+	)
+
+	go sched.RunAsync(context.TODO())
+	time.Sleep(500 * time.Millisecond)
+	sched.Interrupt()
+	results, err := sched.Release()
+	assert.Equal(s.T(), context.Canceled, err)
+	require.Equal(s.T(), 4, len(results))
+	assert.Equal(s.T(), "E", results[0].Name())
+	assert.Equal(s.T(), "A", results[1].Name())
+	assert.Equal(s.T(), "B", results[2].Name())
+	assert.Equal(s.T(), "D", results[3].Name())
+
+	sched = scheduler.NewScheduler(
+		context.TODO(),
+		logger.NewLog(nil),
+		results,
+		common.StatusStop,
+	)
+
+	go sched.RunAsync(context.TODO())
+	time.Sleep(500 * time.Millisecond)
+	results, err = sched.Release()
+	assert.Nil(s.T(), err)
+	require.Equal(s.T(), 4, len(results))
+	assert.Equal(s.T(), "E", results[0].Name())
+	assert.Equal(s.T(), "A", results[1].Name())
+	assert.Equal(s.T(), "B", results[2].Name())
+	assert.Equal(s.T(), "D", results[3].Name())
 }
