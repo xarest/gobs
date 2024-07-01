@@ -3,12 +3,13 @@ package utils
 import (
 	"context"
 	"reflect"
+	"strings"
 )
 
-// func CompactName(name string) string {
-// 	names := strings.Split(name, ".")
-// 	return names[len(names)-1]
-// }
+func CompactName(name string) string {
+	names := strings.Split(name, "/")
+	return names[len(names)-1]
+}
 
 func DefaultServiceName(s any) string {
 	t := reflect.TypeOf(s)

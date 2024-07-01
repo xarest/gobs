@@ -22,11 +22,13 @@ func WaitOnEvents[T any](ctx context.Context, onEvents func(ctx context.Context,
 		})
 	}
 
-	for {
+	for len(cases) > 1 {
 		chosen, value, ok := reflect.Select(cases)
 		if chosen == 0 {
 			// Context was cancelled
-			chErr <- ctx.Err()
+			if chErr != nil {
+				chErr <- ctx.Err()
+			}
 			return
 		} else if ok {
 			// An event was received
@@ -36,9 +38,6 @@ func WaitOnEvents[T any](ctx context.Context, onEvents func(ctx context.Context,
 		} else {
 			// This channel was closed, remove it from the slice
 			cases = append(cases[:chosen], cases[chosen+1:]...)
-			if len(cases) == 1 { // Only the context's Done channel is left
-				return
-			}
 		}
 	}
 }

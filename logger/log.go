@@ -34,8 +34,12 @@ func (l *Logger) Log(format string, args ...interface{}) {
 
 func (l *Logger) LogS(format string, args ...interface{}) {
 	if l.log != nil {
-		args = append([]interface{}{l.tag + ":"}, args...)
-		(*l.log)("%s "+format, args...)
+		if l.isLogDetail {
+			args = append([]interface{}{l.tag + ":"}, args...)
+			(*l.log)("%s "+format, args...)
+		} else {
+			(*l.log)(format, args...)
+		}
 	}
 }
 

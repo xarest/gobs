@@ -36,7 +36,7 @@ func NewScheduler(
 	tasks []types.ITask,
 	ss common.ServiceStatus) *Scheduler {
 	ctx, cancel := context.WithCancel(ctx)
-	log.AddTag("Scheduler/" + ss.String())
+	log.AddTag("Scheduler-" + ss.String())
 	return &Scheduler{
 		Logger:        log,
 		ctx:           ctx,
@@ -57,6 +57,12 @@ func NewScheduler(
 	}
 }
 
+func (r *Scheduler) SetIgnore(t types.ITask) {
+	r.mutexFinished.Lock()
+	defer r.mutexFinished.Unlock()
+	r.isFinished[t.Name()] = true
+}
+
 func (r *Scheduler) Interrupt() {
 	r.cancel()
 }
@@ -67,8 +73,12 @@ func (r *Scheduler) Release() ([]types.ITask, error) {
 }
 
 func (r *Scheduler) RunSync(ctx context.Context) ([]types.ITask, error) {
+	untag := r.AddTag("RunSync")
 	r.wg.Add(1)
-	defer r.wg.Done()
+	defer func() {
+		r.wg.Done()
+		untag()
+	}()
 	r.err = r.startSyncRun(ctx, r.Tasks)
 	return r.finishedList, r.err
 }
@@ -87,8 +97,10 @@ func (r *Scheduler) startSyncRun(ctx context.Context, tasks []types.ITask) error
 				return err
 			}
 			if err := task.Run(ctx, r.status); utils.WrapCommonError(err) != nil {
+				r.LogS("Task %s failed to %s: %s", utils.CompactName(key), r.status.String(), err.Error())
 				return err
 			}
+			r.LogS("Task %s %s successfully", utils.CompactName(key), r.status.String())
 			r.mutexFinished.Lock()
 			r.isFinished[key] = true
 			r.mutexFinished.Unlock()
@@ -101,16 +113,21 @@ func (r *Scheduler) startSyncRun(ctx context.Context, tasks []types.ITask) error
 }
 
 func (r *Scheduler) RunAsync(ctx context.Context) ([]types.ITask, error) {
+	untag := r.AddTag("RunAsync")
 	r.wg.Add(1)
-	defer r.wg.Done()
+	defer func() {
+		r.wg.Done()
+		untag()
+	}()
 	go r.startProducer()
 	go r.startConsumer(ctx)
 
 	r.checkAndLoad(r.Tasks, func(task types.ITask) {
+		r.Log("Load task %s", utils.CompactName(task.Name()))
 		if task.IsRunAsync(r.status) {
 			r.chReqAsync <- task
 		} else {
-			r.chReqAsync <- task
+			r.chReqSync <- task
 		}
 	})
 	select {
@@ -123,12 +140,17 @@ func (r *Scheduler) RunAsync(ctx context.Context) ([]types.ITask, error) {
 }
 
 func (r *Scheduler) startProducer() {
+	log := r.Logger.Clone()
+	untag := log.AddTag("startProducer")
 	defer func() {
 		close(r.chReqSync)
 		close(r.chReqAsync)
+		untag()
 	}()
 	utils.WaitOnEvents(r.ctx, func(ctx context.Context, task types.ITask) error {
 		key := task.Name()
+		untag := log.AddTag("response-" + utils.CompactName(key))
+		defer untag()
 		r.finishedList = append(r.finishedList, task)
 		r.mutexFinished.Lock()
 		r.isFinished[key] = true
@@ -138,6 +160,7 @@ func (r *Scheduler) startProducer() {
 		}
 		followers := task.Followers(r.status)
 		r.checkAndLoad(followers, func(task types.ITask) {
+			log.Log("Load task %s", utils.CompactName(task.Name()))
 			if task.IsRunAsync(r.status) {
 				r.chReqAsync <- task
 			} else {
@@ -145,13 +168,16 @@ func (r *Scheduler) startProducer() {
 			}
 		})
 		return nil
-	}, r.chErr, r.chRes)
+	}, nil, r.chRes)
 }
 
 func (r *Scheduler) startConsumer(ctx context.Context) {
+	log := r.Logger.Clone()
+	untag := log.AddTag("startConsumer")
 	defer func() {
 		close(r.chRes)
 		close(r.chErr)
+		untag()
 	}()
 	var wgTask sync.WaitGroup
 	wgTask.Add(1)
@@ -162,27 +188,44 @@ func (r *Scheduler) startConsumer(ctx context.Context) {
 }
 
 func (r *Scheduler) startSyncWorker(ctx context.Context, wg *sync.WaitGroup) {
-	defer wg.Done()
+	log := r.Logger.Clone()
+	untag := log.AddTag("startSyncWorker")
+	defer func() {
+		wg.Done()
+		untag()
+	}()
 	utils.WaitOnEvents(r.ctx, func(_ context.Context, task types.ITask) error {
+		key := task.Name()
+		log.Log("Task %s is running", utils.CompactName(key))
 		if err := task.Run(ctx, r.status); utils.WrapCommonError(err) != nil {
+			log.LogS("Task %s failed to %s: %s", utils.CompactName(key), r.status.String(), err.Error())
 			r.chErr <- err
 			return err
 		}
+		log.LogS("Task %s %s successfully", utils.CompactName(key), r.status.String())
 		r.chRes <- task
 		return nil
 	}, r.chErr, r.chReqSync)
 }
 
 func (r *Scheduler) startAsyncWorker(ctx context.Context, wg *sync.WaitGroup) {
-	defer wg.Done()
+	log := r.Logger.Clone()
+	untag := log.AddTag("startAsyncWorker")
+	defer func() {
+		wg.Done()
+		untag()
+	}()
 	utils.WaitOnEvents(r.ctx, func(_ context.Context, task types.ITask) error {
 		wg.Add(1)
 		go func(task types.ITask) {
 			defer wg.Done()
+			key := task.Name()
 			if err := task.Run(ctx, r.status); utils.WrapCommonError(err) != nil {
+				log.LogS("Task %s failed to %s: %s", utils.CompactName(key), r.status.String(), err.Error())
 				r.chErr <- err
 				return
 			}
+			log.LogS("Task %s %s successfully", utils.CompactName(key), r.status.String())
 			r.chRes <- task
 		}(task)
 		return nil
@@ -215,8 +258,10 @@ func (r *Scheduler) checkDependenciesReady(task types.ITask) bool {
 	defer r.mutexFinished.RUnlock()
 	for _, dep := range task.DependOn(r.status) {
 		if isFinished, ok := r.isFinished[dep.Name()]; !ok || !isFinished {
+			r.Log("Task %s is waiting for %s", utils.CompactName(task.Name()), utils.CompactName(dep.Name()))
 			return false
 		}
 	}
+	r.Log("Task %s is ready", utils.CompactName(task.Name()))
 	return true
 }

@@ -89,7 +89,7 @@ func (bs *Bootstrap) Add(s IService, status common.ServiceStatus, key string) er
 	sBlock := NewService(s, key, status, bs.Logger.Clone())
 	bs.keys[key] = sBlock
 	bs.services = append(bs.services, sBlock)
-	bs.LogS("Service %s is added with status %s", key, status.String())
+	bs.LogS("Service %s is added with status %s", utils.CompactName(key), status.String())
 	return nil
 }
 
@@ -100,15 +100,20 @@ func (bs *Bootstrap) Init(ctx context.Context) error {
 	var tasks []types.ITask
 	for i := 0; i < totalLength; i++ {
 		sb := bs.services[i]
+		unTag := bs.AddTag(utils.CompactName(sb.name))
 		if err := sb.instance.Init(ctx, sb); err != nil {
+			bs.LogS("Failed to init %s", sb.name, err.Error())
 			return err
 		}
+		bs.LogS("Initialized successfully")
 
 		if err := bs.setupNetworkConnection(sb); err != nil {
+			bs.LogS("Failed to set dependencies, %s", sb.name, err.Error())
 			return err
 		}
 		tasks = append(tasks, sb)
 		totalLength = len(bs.services)
+		unTag()
 	}
 	return bs.execute(ctx, common.StatusInit, tasks)
 }
@@ -123,35 +128,56 @@ func (bs *Bootstrap) Setup(ctx context.Context) error {
 	if err != nil {
 		bs.Logger.Log("Previous state %s hash error %s", common.StatusInit.String(), err.Error())
 	}
+	untag := bs.AddTag("Setup")
+	defer untag()
 	return bs.execute(ctx, common.StatusSetup, tasks)
 }
 
 func (bs *Bootstrap) Start(ctx context.Context) error {
 	sched, ok := bs.schedulers[common.StatusSetup]
 	if !ok {
-		return errors.New("Init is not executed")
+		return errors.New("Setup is not executed")
 	}
 	sched.Interrupt()
 	tasks, err := sched.Release()
 	if err != nil {
 		bs.Logger.Log("Previous state %s hash error %s", common.StatusSetup.String(), err.Error())
 	}
+	untag := bs.AddTag("Start")
+	defer untag()
 	return bs.execute(ctx, common.StatusStart, tasks)
 }
 
 func (bs *Bootstrap) Stop(ctx context.Context) error {
-	if bs.schedulers[common.StatusStart] != nil {
-		bs.schedulers[common.StatusStart].Interrupt()
+	sched, ok := bs.schedulers[common.StatusStart]
+	if ok && sched != nil {
+		sched.Interrupt()
 	}
-	sched, ok := bs.schedulers[common.StatusSetup]
-	if !ok {
-		return errors.New("Init is not executed")
+	sched, ok = bs.schedulers[common.StatusSetup]
+	if !ok || sched == nil {
+		bs.LogS("Setup is not executed. Skip stop")
+		return nil
 	}
+	sched.Interrupt()
 	tasks, err := sched.Release()
 	if err != nil {
 		bs.Logger.Log("Previous state %s hash error %s", common.StatusSetup.String(), err.Error())
 	}
-	return bs.execute(ctx, common.StatusStop, tasks)
+	untag := bs.AddTag("Stop")
+	defer untag()
+	sched = scheduler.NewScheduler(ctx, bs.Logger.Clone(), tasks, common.StatusStop)
+	for _, service := range bs.services {
+		if service.status < common.StatusSetup {
+			sched.SetIgnore(service)
+		}
+	}
+	bs.schedulers[common.StatusStop] = sched
+	if bs.IsConcurrent {
+		_, err = sched.RunAsync(ctx)
+	} else {
+		_, err = sched.RunSync(ctx)
+	}
+	return err
 }
 
 func (bs *Bootstrap) Break(ctx context.Context) {
@@ -161,15 +187,16 @@ func (bs *Bootstrap) Break(ctx context.Context) {
 }
 
 func (bs *Bootstrap) execute(ctx context.Context, ss common.ServiceStatus, tasks []types.ITask) (err error) {
-	bs.Log("Execute %s with %d tasks", ss.String(), len(tasks))
+	untag := bs.AddTag("execute-" + ss.String())
+	defer untag()
+	bs.LogS("Execute %s with %d tasks", ss.String(), len(tasks))
 	sched := scheduler.NewScheduler(ctx, bs.Logger.Clone(), tasks, ss)
-
+	bs.schedulers[ss] = sched
 	if bs.IsConcurrent {
 		_, err = sched.RunAsync(ctx)
 	} else {
 		_, err = sched.RunSync(ctx)
 	}
-	bs.schedulers[ss] = sched
 	return err
 }
 
@@ -218,6 +245,5 @@ func (bs *Bootstrap) setupNetworkConnection(sb *Service) error {
 		})
 	}
 	sb.ExtraDeps = extraServices
-	bs.Log("After setting up %v %v", sb.Deps, sb.ExtraDeps)
 	return nil
 }

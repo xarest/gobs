@@ -2,7 +2,6 @@ package gobs
 
 import (
 	"context"
-	"sync"
 
 	"github.com/traphamxuan/gobs/common"
 	"github.com/traphamxuan/gobs/logger"
@@ -37,8 +36,6 @@ type Service struct {
 	instance  IService
 	name      string
 	status    common.ServiceStatus
-	mu        *sync.Mutex
-	// config    *Config
 }
 
 var _ types.ITask = (*Service)(nil)
@@ -59,7 +56,6 @@ func NewService(s IService, name string, status common.ServiceStatus, log *logge
 		instance: s,
 		name:     name,
 		status:   status,
-		mu:       &sync.Mutex{},
 	}
 	c.AddTag("Service/" + name)
 	return c
@@ -80,12 +76,6 @@ func (sb *Service) Followers(ss common.ServiceStatus) []types.ITask {
 }
 
 func (sb *Service) Run(ctx context.Context, ss common.ServiceStatus) (err error) {
-	sb.mu.Lock()
-	defer sb.mu.Unlock()
-	if sb.status >= ss {
-		sb.Log("Skip service %s at %s because it is %s", sb.name, ss.String(), sb.status.String())
-		return utils.ErrorServiceRan
-	}
 	switch ss {
 	case common.StatusSetup:
 		err = sb.OnSetup(ctx, sb.Deps, sb.ExtraDeps)
