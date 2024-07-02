@@ -11,7 +11,7 @@ import (
 	"github.com/traphamxuan/gobs/logger"
 )
 
-var l logger.LogFnc = func(s string, i ...interface{}) {
+var log logger.LogFnc = func(s string, i ...interface{}) {
 	fmt.Printf(s+"\n", i...)
 }
 
@@ -52,7 +52,7 @@ func (s *BootstrapSuit) TestAsyncSchedulerWithError() {
 	setupOrder = []int{}
 	bs := gobs.NewBootstrap(gobs.Config{
 		NumOfConcurrencies: gobs.DEFAULT_MAX_CONCURRENT,
-		// Logger:             &l,
+		// Logger:             &log,
 		// EnableLogDetail:    true,
 	})
 	ctx, cancel := context.WithDeadline(context.TODO(), time.Now().Add(5*time.Second))

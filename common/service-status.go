@@ -3,17 +3,17 @@ package common
 type ServiceStatus int
 
 const (
-	StatusNone  ServiceStatus = iota
-	StatusInit  ServiceStatus = iota + 1
-	StatusSetup ServiceStatus = iota + 1
-	StatusStart ServiceStatus = iota + 1
-	StatusStop  ServiceStatus = iota + 1
+	StatusUninitialized ServiceStatus = iota
+	StatusInit          ServiceStatus = iota + 1
+	StatusSetup         ServiceStatus = iota + 1
+	StatusStart         ServiceStatus = iota + 1
+	StatusStop          ServiceStatus = iota + 1
 )
 
 func (ss ServiceStatus) String() string {
 	switch ss {
-	case StatusNone:
-		return "None"
+	case StatusUninitialized:
+		return "Uninitialized"
 	case StatusInit:
 		return "Init"
 	case StatusSetup:
