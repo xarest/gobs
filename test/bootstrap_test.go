@@ -2,62 +2,80 @@ package gobs_test
 
 import (
 	"context"
-	"fmt"
 	"testing"
+	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 	"github.com/traphamxuan/gobs"
 )
 
-func Test_Bootstrap(t *testing.T) {
-	ctx := context.TODO()
+type BootstrapSuit struct {
+	suite.Suite
+}
+
+func TestBootstrap(t *testing.T) {
+	suite.Run(t, new(BootstrapSuit))
+}
+
+// func (s *SchedulerSuit) SetupSuite() {
+// 	fmt.Println("SchedulerSuit/SetupSuite")
+// }
+
+// func (s *SchedulerSuit) TearDownSuite() {
+// 	fmt.Println("SchedulerSuit/TearDownSuite")
+// }
+
+// func (s *SchedulerSuit) SetupTest() {
+// 	fmt.Println("SchedulerSuit/SetupTest")
+// }
+
+// func (s *SchedulerSuit) TearDownTest() {
+// 	fmt.Println("SchedulerSuit/TearDownTest")
+// }
+
+func (s *BootstrapSuit) TestSync() {
+	t := s.T()
+	mainCtx := context.Background()
+	ctx, cancel := context.WithDeadline(mainCtx, time.Now().Add(5*time.Second))
+	defer cancel() // It's a good practice to call cancel even if not strictly necessary here
+
+	// var logger logger.LogFnc = func(s string, i ...interface{}) {
+	// 	fmt.Printf(s+"\n", i...)
+	// }
 	bs := gobs.NewBootstrap(gobs.Config{
-		IsConcurrent: true,
-		Logger: func(s string, i ...interface{}) {
-			fmt.Printf(s+"\n", i...)
-		},
-		EnableLogModule: true,
-		EnableLogDetail: true,
-		EnableLogAdd:    true,
-		EnableLogSetup:  true,
-		EnableLogStart:  true,
-		EnableLogStop:   true,
+		NumOfConcurrencies: 0,
+		Logger:             &log,
+		// EnableLogDetail: true,
 	})
 	bs.AddDefault(&D{})
 
-	if err := bs.Setup(ctx); err != nil {
-		t.Errorf("Expected no error, but got %v", err)
-	}
+	require.NoError(t, bs.Init(ctx), "Init expected no error")
+	require.NoError(t, bs.Setup(ctx), "Setup expected no error")
 
 	a, ok := bs.GetService(&A{}, "").(*A)
-	if !ok || a == nil {
-		t.Error("Expected A is valid")
-	}
-	b, ok := bs.GetService(&B{}, "").(*B)
-	if !ok || b == nil {
-		t.Error("Expected B is valid")
-	}
-	c, ok := bs.GetService(&C{}, "").(*C)
-	if !ok || c == nil {
-		t.Error("Expected C is valid")
-	}
-	d, ok := bs.GetService(&D{}, "").(*D)
-	if !ok || d == nil {
-		t.Error("Expected D is valid")
-	}
+	require.True(t, ok, "Expected A is valid")
+	require.NotNil(t, a, "Expected A is not nil")
 
-	if b.A != a {
-		t.Errorf("Expected B.A is %p, but got %p", a, b.A)
-	}
-	if c.A != a {
-		t.Errorf("Expected C.A is %p, but got %p", a, c.A)
-	}
-	if c.B != b {
-		t.Errorf("Expected C.B is %p, but got %p", b, c.B)
-	}
-	if d.B != b {
-		t.Errorf("Expected D.B is %p, but got %p", b, d.B)
-	}
-	if d.C != c {
-		t.Errorf("Expected D.C is %p, but got %p", c, d.C)
-	}
+	b, ok := bs.GetService(&B{}, "").(*B)
+	require.True(t, ok, "Expected B is valid")
+	require.NotNil(t, b, "Expected B is not nil")
+
+	c, ok := bs.GetService(&C{}, "").(*C)
+	require.True(t, ok, "Expected C is valid")
+	require.NotNil(t, c, "Expected C is not nil")
+
+	d, ok := bs.GetService(&D{}, "").(*D)
+	require.True(t, ok, "Expected D is valid")
+	require.NotNil(t, d, "Expected D is not nil")
+
+	assert.Equal(t, a, b.A, "Expected B.A is equal to A")
+	assert.Equal(t, a, c.A, "Expected C.A is equal to A")
+	assert.Equal(t, b, c.B, "Expected C.B is equal to B")
+	assert.Equal(t, b, d.B, "Expected D.B is equal to B")
+	assert.Equal(t, c, d.C, "Expected D.C is equal to C")
+
+	require.NoError(t, bs.Start(ctx), "Expected no error from Start")
+	require.NoError(t, bs.Stop(ctx), "Expected no error from Stop")
 }
