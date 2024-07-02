@@ -17,7 +17,7 @@ func (s *BootstrapSuit) TestAsyncPerformance() {
 	ctx := context.TODO()
 	service := NewSampleAsyncService(numOfDependencies, level)
 	bs := gobs.NewBootstrap(gobs.Config{
-		IsConcurrent: true,
+		NumOfConcurrencies: gobs.DEFAULT_MAX_CONCURRENT,
 	})
 	require.NoError(t, bs.AddDefault(service), "AddDefault expected no error")
 	require.NoError(t, bs.Init(ctx), "Init expected no error")

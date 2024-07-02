@@ -13,10 +13,10 @@ import (
 
 type Bootstrap struct {
 	*logger.Logger
-	IsConcurrent bool
-	schedulers   map[common.ServiceStatus]*scheduler.Scheduler
-	services     []*Service
-	keys         map[string]*Service
+	numOfConcurrencies int
+	schedulers         map[common.ServiceStatus]*scheduler.Scheduler
+	services           []*Service
+	keys               map[string]*Service
 }
 
 func NewBootstrap(configs ...Config) *Bootstrap {
@@ -28,9 +28,9 @@ func NewBootstrap(configs ...Config) *Bootstrap {
 	bs := &Bootstrap{
 		Logger: logger.NewLog(cfg.Logger),
 		// config: cfg,
-		schedulers:   make(map[common.ServiceStatus]*scheduler.Scheduler, common.StatusStop+1),
-		IsConcurrent: cfg.IsConcurrent,
-		keys:         make(map[string]*Service),
+		schedulers:         make(map[common.ServiceStatus]*scheduler.Scheduler, common.StatusStop+1),
+		numOfConcurrencies: cfg.NumOfConcurrencies,
+		keys:               make(map[string]*Service),
 	}
 	bs.SetDetail(cfg.EnableLogDetail)
 	bs.SetTag("Bootstrap")
@@ -165,19 +165,14 @@ func (bs *Bootstrap) Stop(ctx context.Context) error {
 	}
 	untag := bs.AddTag("Stop")
 	defer untag()
-	sched = scheduler.NewScheduler(ctx, bs.Logger.Clone(), tasks, common.StatusStop)
+	sched = scheduler.NewScheduler(ctx, bs.Logger.Clone(), tasks, common.StatusStop, bs.numOfConcurrencies)
 	for _, service := range bs.services {
 		if service.status < common.StatusSetup {
 			sched.SetIgnore(service)
 		}
 	}
 	bs.schedulers[common.StatusStop] = sched
-	if bs.IsConcurrent {
-		_, err = sched.RunAsync(ctx)
-	} else {
-		_, err = sched.RunSync(ctx)
-	}
-	return err
+	return sched.Run(ctx)
 }
 
 func (bs *Bootstrap) Break(ctx context.Context) {
@@ -190,14 +185,9 @@ func (bs *Bootstrap) execute(ctx context.Context, ss common.ServiceStatus, tasks
 	untag := bs.AddTag("execute-" + ss.String())
 	defer untag()
 	bs.LogS("Execute %s with %d tasks", ss.String(), len(tasks))
-	sched := scheduler.NewScheduler(ctx, bs.Logger.Clone(), tasks, ss)
+	sched := scheduler.NewScheduler(ctx, bs.Logger.Clone(), tasks, ss, bs.numOfConcurrencies)
 	bs.schedulers[ss] = sched
-	if bs.IsConcurrent {
-		_, err = sched.RunAsync(ctx)
-	} else {
-		_, err = sched.RunSync(ctx)
-	}
-	return err
+	return sched.Run(ctx)
 }
 
 func (bs *Bootstrap) setupNetworkConnection(sb *Service) error {

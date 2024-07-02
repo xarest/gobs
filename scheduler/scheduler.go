@@ -12,49 +12,59 @@ import (
 
 type Scheduler struct {
 	*logger.Logger
-	ctx           context.Context
-	cancel        context.CancelFunc
-	status        common.ServiceStatus
-	wg            sync.WaitGroup
-	chReqSync     chan types.ITask
-	chReqAsync    chan types.ITask
-	chRes         chan types.ITask
-	chErr         chan error
-	isRunning     map[string]bool
-	isFinished    map[string]bool
-	mutexRun      *sync.RWMutex
-	mutexFinished *sync.RWMutex
-	err           error
-	ranList       []types.ITask
-	finishedList  []types.ITask
-	Tasks         []types.ITask
+	ctx                context.Context
+	cancel             context.CancelFunc
+	status             common.ServiceStatus
+	wg                 sync.WaitGroup
+	chReqSync          chan types.ITask
+	chReqAsync         chan types.ITask
+	chRes              chan types.ITask
+	chErr              chan error
+	numOfConcurrencies int
+	isRunning          map[string]bool
+	isFinished         map[string]bool
+	mutexRun           *sync.RWMutex
+	mutexFinished      *sync.RWMutex
+	err                error
+	ranList            []types.ITask
+	finishedList       []types.ITask
+	Tasks              []types.ITask
 }
 
 func NewScheduler(
 	ctx context.Context,
 	log *logger.Logger,
 	tasks []types.ITask,
-	ss common.ServiceStatus) *Scheduler {
+	ss common.ServiceStatus,
+	numOfConcurrencies int,
+) *Scheduler {
+	numOfTasks := len(tasks)
+	concurrentLimit := numOfConcurrencies
+	if concurrentLimit < 0 || concurrentLimit > numOfTasks {
+		concurrentLimit = numOfTasks
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	log.AddTag("Scheduler-" + ss.String())
-	return &Scheduler{
-		Logger:        log,
-		ctx:           ctx,
-		cancel:        cancel,
-		status:        ss,
-		chReqSync:     make(chan types.ITask, len(tasks)),
-		chReqAsync:    make(chan types.ITask, len(tasks)),
-		chRes:         make(chan types.ITask, len(tasks)),
-		chErr:         make(chan error, len(tasks)),
-		ranList:       make([]types.ITask, 0, len(tasks)),
-		finishedList:  make([]types.ITask, 0, len(tasks)),
-		isRunning:     make(map[string]bool, len(tasks)),
-		isFinished:    make(map[string]bool, len(tasks)),
-		mutexRun:      &sync.RWMutex{},
-		mutexFinished: &sync.RWMutex{},
-		Tasks:         tasks,
-		err:           nil,
+	sched := &Scheduler{
+		Logger:             log,
+		ctx:                ctx,
+		cancel:             cancel,
+		status:             ss,
+		chReqSync:          make(chan types.ITask, numOfTasks),
+		chReqAsync:         make(chan types.ITask, concurrentLimit),
+		chRes:              make(chan types.ITask, numOfTasks),
+		chErr:              make(chan error, numOfTasks),
+		numOfConcurrencies: numOfConcurrencies,
+		ranList:            make([]types.ITask, 0, numOfTasks),
+		finishedList:       make([]types.ITask, 0, numOfTasks),
+		isRunning:          make(map[string]bool, numOfTasks),
+		isFinished:         make(map[string]bool, numOfTasks),
+		mutexRun:           &sync.RWMutex{},
+		mutexFinished:      &sync.RWMutex{},
+		Tasks:              tasks,
+		err:                nil,
 	}
+	return sched
 }
 
 func (r *Scheduler) SetIgnore(t types.ITask) {
@@ -72,15 +82,28 @@ func (r *Scheduler) Release() ([]types.ITask, error) {
 	return r.finishedList, r.err
 }
 
-func (r *Scheduler) RunSync(ctx context.Context) ([]types.ITask, error) {
+func (r *Scheduler) Run(ctx context.Context) error {
 	untag := r.AddTag("RunSync")
 	r.wg.Add(1)
 	defer func() {
 		r.wg.Done()
 		untag()
 	}()
-	r.err = r.startSyncRun(ctx, r.Tasks)
-	return r.finishedList, r.err
+	if r.numOfConcurrencies == 0 {
+		r.err = r.startSyncRun(ctx, r.Tasks)
+		return r.err
+	}
+
+	go r.startProducer()
+	go r.startConsumer(ctx)
+
+	select {
+	case <-r.ctx.Done():
+		r.err = r.ctx.Err()
+	case err := <-r.chErr:
+		r.err = err
+	}
+	return r.err
 }
 
 func (r *Scheduler) startSyncRun(ctx context.Context, tasks []types.ITask) error {
@@ -90,9 +113,7 @@ func (r *Scheduler) startSyncRun(ctx context.Context, tasks []types.ITask) error
 		}
 		key := task.Name()
 
-		r.mutexFinished.RLock()
 		if isFinished, ok := r.isFinished[key]; !ok || !isFinished {
-			r.mutexFinished.RUnlock()
 			if err := r.startSyncRun(ctx, task.DependOn(r.status)); err != nil {
 				return err
 			}
@@ -101,42 +122,11 @@ func (r *Scheduler) startSyncRun(ctx context.Context, tasks []types.ITask) error
 				return err
 			}
 			r.LogS("Task %s %s successfully", utils.CompactName(key), r.status.String())
-			r.mutexFinished.Lock()
 			r.isFinished[key] = true
-			r.mutexFinished.Unlock()
 			r.finishedList = append(r.finishedList, task)
-		} else {
-			r.mutexFinished.RUnlock()
 		}
 	}
 	return nil
-}
-
-func (r *Scheduler) RunAsync(ctx context.Context) ([]types.ITask, error) {
-	untag := r.AddTag("RunAsync")
-	r.wg.Add(1)
-	defer func() {
-		r.wg.Done()
-		untag()
-	}()
-	go r.startProducer()
-	go r.startConsumer(ctx)
-
-	r.checkAndLoad(r.Tasks, func(task types.ITask) {
-		r.Log("Load task %s", utils.CompactName(task.Name()))
-		if task.IsRunAsync(r.status) {
-			r.chReqAsync <- task
-		} else {
-			r.chReqSync <- task
-		}
-	})
-	select {
-	case <-r.ctx.Done():
-		r.err = r.ctx.Err()
-	case err := <-r.chErr:
-		r.err = err
-	}
-	return r.finishedList, r.err
 }
 
 func (r *Scheduler) startProducer() {
@@ -147,6 +137,9 @@ func (r *Scheduler) startProducer() {
 		close(r.chReqAsync)
 		untag()
 	}()
+
+	r.checkAndLoad(r.Tasks)
+
 	utils.WaitOnEvents(r.ctx, func(ctx context.Context, task types.ITask) error {
 		key := task.Name()
 		untag := log.AddTag("response-" + utils.CompactName(key))
@@ -159,14 +152,7 @@ func (r *Scheduler) startProducer() {
 			return utils.ErrorEndOfProcessing
 		}
 		followers := task.Followers(r.status)
-		r.checkAndLoad(followers, func(task types.ITask) {
-			log.Log("Load task %s", utils.CompactName(task.Name()))
-			if task.IsRunAsync(r.status) {
-				r.chReqAsync <- task
-			} else {
-				r.chReqSync <- task
-			}
-		})
+		r.checkAndLoad(followers)
 		return nil
 	}, nil, r.chRes)
 }
@@ -232,7 +218,7 @@ func (r *Scheduler) startAsyncWorker(ctx context.Context, wg *sync.WaitGroup) {
 	}, r.chErr, r.chReqAsync)
 }
 
-func (r *Scheduler) checkAndLoad(tasks []types.ITask, onLoad func(task types.ITask)) {
+func (r *Scheduler) checkAndLoad(tasks []types.ITask) {
 	for _, task := range tasks {
 		// Check if task's dependencies finished
 		if r.checkDependenciesReady(task) {
@@ -245,7 +231,11 @@ func (r *Scheduler) checkAndLoad(tasks []types.ITask, onLoad func(task types.ITa
 				r.isRunning[key] = true
 				r.mutexRun.Unlock()
 				r.ranList = append(r.ranList, task)
-				onLoad(task)
+				if task.IsRunAsync(r.status) {
+					r.chReqAsync <- task
+				} else {
+					r.chReqSync <- task
+				}
 			} else {
 				r.mutexRun.RUnlock()
 			}
@@ -256,12 +246,15 @@ func (r *Scheduler) checkAndLoad(tasks []types.ITask, onLoad func(task types.ITa
 func (r *Scheduler) checkDependenciesReady(task types.ITask) bool {
 	r.mutexFinished.RLock()
 	defer r.mutexFinished.RUnlock()
+	logTaskKey := utils.CompactName(task.Name())
 	for _, dep := range task.DependOn(r.status) {
-		if isFinished, ok := r.isFinished[dep.Name()]; !ok || !isFinished {
-			r.Log("Task %s is waiting for %s", utils.CompactName(task.Name()), utils.CompactName(dep.Name()))
+		depKey := dep.Name()
+		logKey := utils.CompactName(depKey)
+		if isFinished, ok := r.isFinished[depKey]; !ok || !isFinished {
+			r.Log("Task %s is waiting for %s", logTaskKey, logKey)
 			return false
 		}
 	}
-	r.Log("Task %s is ready", utils.CompactName(task.Name()))
+	r.Log("Task %s is ready", logTaskKey)
 	return true
 }

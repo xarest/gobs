@@ -45,7 +45,7 @@ func (s *BootstrapSuit) TestSync() {
 	// 	fmt.Printf(s+"\n", i...)
 	// }
 	bs := gobs.NewBootstrap(gobs.Config{
-		IsConcurrent: false,
+		NumOfConcurrencies: 0,
 		// Logger:          &logger,
 		// EnableLogDetail: true,
 	})

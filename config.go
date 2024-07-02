@@ -3,11 +3,13 @@ package gobs
 import "github.com/traphamxuan/gobs/logger"
 
 type Config struct {
-	IsConcurrent    bool
-	Logger          *logger.LogFnc
-	EnableLogDetail bool
+	NumOfConcurrencies int
+	Logger             *logger.LogFnc
+	EnableLogDetail    bool
 }
 
+const DEFAULT_MAX_CONCURRENT = -1
+
 var DefaultConfig = Config{
-	IsConcurrent: true,
+	NumOfConcurrencies: DEFAULT_MAX_CONCURRENT,
 }

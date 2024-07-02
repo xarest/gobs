@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+	"github.com/traphamxuan/gobs"
 	"github.com/traphamxuan/gobs/common"
 	"github.com/traphamxuan/gobs/logger"
 	"github.com/traphamxuan/gobs/scheduler"
@@ -93,9 +94,12 @@ func (s *SchedulerSuit) TestSchedulerSync() {
 			&taskA, &taskB, &taskC, &taskD,
 		},
 		common.StatusSetup,
+		gobs.DEFAULT_MAX_CONCURRENT,
 	)
-	results, err := scheduler.RunSync(context.TODO())
+	err := scheduler.Run(context.TODO())
 	require.Nil(s.T(), err)
+	results, err := scheduler.Release()
+	require.NoError(s.T(), err)
 	require.Equal(s.T(), 4, len(results))
 	assert.Equal(s.T(), "D", results[0].Name())
 	assert.Equal(s.T(), "C", results[1].Name())
@@ -120,9 +124,12 @@ func (s *SchedulerSuit) TestSchedulerAsyncWithoutDelay() {
 			&taskA, &taskB, &taskC, &taskD,
 		},
 		common.StatusSetup,
+		gobs.DEFAULT_MAX_CONCURRENT,
 	)
-	results, err := scheduler.RunAsync(context.TODO())
+	err := scheduler.Run(context.TODO())
 	require.Nil(s.T(), err)
+	results, err := scheduler.Release()
+	require.NoError(s.T(), err)
 	require.Equal(s.T(), 4, len(results))
 	assert.Equal(s.T(), "A", results[0].Name())
 	assert.Equal(s.T(), "B", results[1].Name())
@@ -149,9 +156,13 @@ func (s *SchedulerSuit) TestSchedulerAsyncWithDelay() {
 			&taskA, &taskB, &taskC, &taskD, &taskE,
 		},
 		common.StatusSetup,
+		gobs.DEFAULT_MAX_CONCURRENT,
 	)
-	results, err := scheduler.RunAsync(context.TODO())
+	err := scheduler.Run(context.TODO())
 	require.Nil(s.T(), err)
+	scheduler.Interrupt()
+	results, err := scheduler.Release()
+	require.NoError(s.T(), err)
 	require.Equal(s.T(), 5, len(results))
 	assert.Equal(s.T(), "E", results[0].Name())
 	assert.Equal(s.T(), "A", results[1].Name())
@@ -179,9 +190,10 @@ func (s *SchedulerSuit) TestSchedulerWithAsyncInterruptAndStop() {
 			&taskA, &taskB, &taskC, &taskD, &taskE,
 		},
 		common.StatusSetup,
+		gobs.DEFAULT_MAX_CONCURRENT,
 	)
 
-	go sched.RunAsync(context.TODO())
+	go sched.Run(context.TODO())
 	time.Sleep(500 * time.Millisecond)
 	sched.Interrupt()
 	results, err := sched.Release()
@@ -197,9 +209,10 @@ func (s *SchedulerSuit) TestSchedulerWithAsyncInterruptAndStop() {
 		logger.NewLog(nil),
 		results,
 		common.StatusStop,
+		gobs.DEFAULT_MAX_CONCURRENT,
 	)
 
-	go sched.RunAsync(context.TODO())
+	go sched.Run(context.TODO())
 	time.Sleep(500 * time.Millisecond)
 	results, err = sched.Release()
 	assert.Nil(s.T(), err)

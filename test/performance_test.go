@@ -17,7 +17,7 @@ func (s *BootstrapSuit) TestSyncPerformance() {
 	ctx := context.Background()
 	service := NewSampleService(numOfDependencies, level)
 	bs := gobs.NewBootstrap(gobs.Config{
-		IsConcurrent: false,
+		NumOfConcurrencies: 0,
 	})
 	bs.AddDefault(service)
 	require.NoError(t, bs.Init(ctx), "Bootstrap initialization failed")

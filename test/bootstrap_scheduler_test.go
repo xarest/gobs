@@ -19,7 +19,7 @@ func (s *BootstrapSuit) TestSyncScheduler() {
 	t := s.T()
 	setupOrder = []int{}
 	bs := gobs.NewBootstrap(gobs.Config{
-		IsConcurrent: false,
+		NumOfConcurrencies: 0,
 	})
 	ctx := context.TODO()
 	require.NoError(t, bs.AddDefault(new(S1)), "AddDefault expected no error")
@@ -35,7 +35,7 @@ func (s *BootstrapSuit) TestAsyncScheduler() {
 	t := s.T()
 	setupOrder = []int{}
 	bs := gobs.NewBootstrap(gobs.Config{
-		IsConcurrent: true,
+		NumOfConcurrencies: gobs.DEFAULT_MAX_CONCURRENT,
 	})
 	ctx := context.TODO()
 	require.NoError(t, bs.AddDefault(new(S1)), "AddDefault expected no error")
@@ -47,16 +47,17 @@ func (s *BootstrapSuit) TestAsyncScheduler() {
 	assert.Equal(t, expectedBootOrder, setupOrder, "Expected setupOrder to match expectedBootOrder")
 }
 
-func (s *BootstrapSuit) TestSyncSchedulerWithError() {
+func (s *BootstrapSuit) TestAsyncSchedulerWithError() {
 	t := s.T()
 	setupOrder = []int{}
 	bs := gobs.NewBootstrap(gobs.Config{
-		IsConcurrent: true,
-		// Logger:          &l,
-		// EnableLogDetail: true,
+		NumOfConcurrencies: gobs.DEFAULT_MAX_CONCURRENT,
+		// Logger:             &l,
+		// EnableLogDetail:    true,
 	})
 	ctx, cancel := context.WithDeadline(context.TODO(), time.Now().Add(5*time.Second))
 	defer cancel()
+	setupOrder = []int{}
 	require.NoError(t, bs.AddDefault(new(S1)), "AddDefault expected no error")
 	s9 := &S9{err: assert.AnError}
 	require.NoError(t, bs.AddDefault(s9), "AddDefault expected no error")
@@ -66,10 +67,14 @@ func (s *BootstrapSuit) TestSyncSchedulerWithError() {
 	require.NotNil(t, s9, "Expected S9 is not nil")
 	s9.err = assert.AnError
 	require.Error(t, bs.Setup(ctx), "Setup expected error")
+	expectedBootOrder := []int{11, 12, 7, 13, 8, 10, 6, 3, 9}
+	require.Equal(t, len(expectedBootOrder), len(setupOrder), "Expected setupOrder length to match expectedBootOrder length")
+	assert.Equal(t, expectedBootOrder, setupOrder, "Expected setupOrder to match expectedBootOrder")
+
 	require.NoError(t, bs.Stop(ctx), "Setup expected no error")
-	s9.err = nil
 
 	expectedStopOrder := []int{3, 6, 7, 8, 10, 11, 12, 13}
 	require.Equal(t, len(expectedStopOrder), len(stopOrder), "Expected stopOrder length to match expectedStopOrder length")
 	assert.Equal(t, expectedStopOrder, stopOrder, "Expected stopOrder to match expectedStopOrder")
+	s9.err = nil
 }
