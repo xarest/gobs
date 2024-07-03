@@ -1,9 +1,10 @@
 package utils
 
 import (
-	"context"
 	"reflect"
 	"strings"
+
+	"github.com/traphamxuan/gobs/common"
 )
 
 func CompactName(name string) string {
@@ -19,6 +20,11 @@ func DefaultServiceName(s any) string {
 	return t.PkgPath() + "." + t.Name()
 }
 
-func EmptyFunc(ctx context.Context) error {
-	return nil
+func WrapCommonError(err error) error {
+	switch err {
+	case common.ErrorServiceRan:
+		return nil
+	default:
+		return err
+	}
 }

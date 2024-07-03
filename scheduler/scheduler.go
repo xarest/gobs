@@ -156,7 +156,7 @@ func (r *Scheduler) startProducer() {
 		r.isFinished[key] = true
 		r.mutexFinished.Unlock()
 		if len(r.finishedList) == len(r.Tasks) {
-			return utils.ErrorEndOfProcessing
+			return common.ErrorEndOfProcessing
 		}
 		followers := task.Followers(r.status)
 		r.checkAndLoad(followers)

@@ -77,4 +77,16 @@ func (s *BootstrapSuit) TestAsyncSchedulerWithError() {
 	require.Equal(t, len(expectedStopOrder), len(stopOrder), "Expected stopOrder length to match expectedStopOrder length")
 	assert.Equal(t, expectedStopOrder, stopOrder, "Expected stopOrder to match expectedStopOrder")
 	s9.err = nil
+
+	s6, ok := bs.GetService(&S6{}, "").(*S6)
+	require.True(t, ok, "Expected GetService return s6")
+	require.NotNil(t, s6, "Expected s6 is not nil")
+	s10, ok := bs.GetService(&S10{}, "").(*S10)
+	require.True(t, ok, "Expected GetService return s10")
+	require.NotNil(t, s10, "Expected s10 is not nil")
+	s11, ok := bs.GetService(&S11{}, "").(*S11)
+	require.True(t, ok, "Expected GetService return S11")
+	require.NotNil(t, s11, "Expected S11 is not nil")
+	assert.Equal(t, s10, s6.S10, "Expected s6.s10 to match s10")
+	assert.Equal(t, s11, s6.S11, "Expected s6.S11 to match S11")
 }
