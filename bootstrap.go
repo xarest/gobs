@@ -75,10 +75,6 @@ func (bs *Bootstrap) GetService(service IService, key string) IService {
 			return nil
 		}
 		key = utils.DefaultServiceName(service)
-		if cp, ok := bs.keys[key]; ok {
-			return cp.instance
-		}
-		return nil
 	}
 	if cp, ok := bs.keys[key]; ok {
 		return cp.instance
@@ -167,15 +163,18 @@ func (bs *Bootstrap) Init(ctx context.Context) error {
 		sb := bs.services[i]
 		taskKey := utils.CompactName(sb.name)
 		unTag := bs.AddTag(taskKey)
-		if err := sb.instance.Init(ctx, sb); err != nil {
+		sCfg, err := sb.instance.Init(ctx)
+		if err != nil {
 			bs.LogS("Failed to init %s", taskKey, err.Error())
 			return err
 		}
-
-		if err := bs.setupNetworkConnection(sb); err != nil {
-			bs.LogS("Failed to set dependencies, %s", sb.name, err.Error())
-			return err
+		if sCfg != nil {
+			if err := bs.setupNetworkConnection(sb, *sCfg); err != nil {
+				bs.LogS("Failed to set dependencies, %s", sb.name, err.Error())
+				return err
+			}
 		}
+
 		tasks = append(tasks, sb)
 		totalLength = len(bs.services)
 		unTag()
@@ -279,61 +278,57 @@ func (bs *Bootstrap) execute(ctx context.Context, ss common.ServiceStatus, tasks
 	return sched.Run(ctx)
 }
 
-func (bs *Bootstrap) setupNetworkConnection(sb *Service) error {
-	var services []IService
+func (bs *Bootstrap) setupNetworkConnection(sb *Service, sCfg ServiceLifeCycle) error {
 	logServiceKey := utils.CompactName(sb.name)
-	bs.Log("Service %s has %d dependencies", logServiceKey, len(sb.Deps))
-	for _, service := range sb.Deps {
+	bs.Log("Service %s has %d dependencies", logServiceKey, len(sCfg.Deps))
+
+	for _, service := range sCfg.Deps {
 		key := utils.DefaultServiceName(service)
 
 		dService, ok := bs.keys[key]
 		if !ok {
-			bs.Add(service, common.StatusUninitialized, key)
+			if err := bs.Add(service, common.StatusUninitialized, key); err != nil {
+				return err
+			}
 			dService = bs.keys[key]
 		}
-		sb.following = append(sb.following, dService)
-		dService.followers = append(dService.followers, sb)
-		logKey := utils.CompactName(key)
-		bs.Log("Service %s depends on service %s (%d) and service %s has service %s as a follower (%d)",
-			logServiceKey, logKey, len(sb.following), logKey, logServiceKey, len(dService.followers),
-		)
-		services = append(services, dService.instance)
+		sb.UpdateDependencies(dService)
 	}
-	sb.Deps = services
 
-	var extraServices []CustomService
-	bs.Log("Service %s has %d extra dependencies", logServiceKey, len(sb.ExtraDeps))
-	for _, cService := range sb.ExtraDeps {
+	bs.Log("Service %s has %d extra dependencies", logServiceKey, len(sCfg.ExtraDeps))
+	for _, cService := range sCfg.ExtraDeps {
 		key := cService.Name
 		if key == "" {
 			key = utils.DefaultServiceName(cService.Service)
 		}
 		dService, ok := bs.keys[key]
-		if !ok {
+		if !ok || dService == nil {
 			if cService.Instance != nil {
 				iService, ok := cService.Instance.(IService)
 				if ok {
-					bs.Add(iService, common.StatusUninitialized, key)
+					if err := bs.Add(iService, common.StatusUninitialized, key); err != nil {
+						return err
+					}
 				} else {
-					bs.Add(cService.Service, common.StatusUninitialized, key)
+					if err := bs.Add(cService.Service, common.StatusUninitialized, key); err != nil {
+						return err
+					}
 				}
 			} else {
-				bs.Add(cService.Service, common.StatusUninitialized, key)
+				if err := bs.Add(cService.Service, common.StatusUninitialized, key); err != nil {
+					return err
+				}
 			}
 			dService = bs.keys[key]
 		}
-		sb.following = append(sb.following, dService)
-		dService.followers = append(dService.followers, sb)
-		logKey := utils.CompactName(key)
-		bs.Log("Service %s depends on service %s (%d) and service %s has service %s as a follower (%d)",
-			logServiceKey, logKey, len(sb.following), logKey, logServiceKey, len(dService.followers),
-		)
-		extraServices = append(extraServices, CustomService{
-			Service:  dService.instance,
-			Name:     key,
-			Instance: cService.Instance,
-		})
+		sb.UpdateDependencies(dService)
 	}
-	sb.ExtraDeps = extraServices
+	sCfg.Deps = nil
+	for _, dep := range sb.following {
+		if d, ok := dep.(*Service); ok {
+			sCfg.Deps = append(sCfg.Deps, d.instance)
+		}
+	}
+	sb.ServiceLifeCycle = sCfg
 	return nil
 }

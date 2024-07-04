@@ -34,25 +34,26 @@ type SampleService struct {
 }
 
 // Init implements gobs.IService.
-func (s *SampleService) Init(ctx context.Context, c *gobs.Service) error {
+func (s *SampleService) Init(ctx context.Context) (*gobs.ServiceLifeCycle, error) {
 	if s.level == 0 {
-		return nil
+		return nil, nil
 	}
+	sCfg := &gobs.ServiceLifeCycle{}
 	deps := make([]SampleService, s.numOfDeps)
-	c.ExtraDeps = make([]gobs.CustomService, s.numOfDeps)
+	sCfg.ExtraDeps = make([]gobs.CustomService, s.numOfDeps)
 	newLevel := s.level - 1
 	for i := 0; i < s.numOfDeps; i++ {
 		numOfServices++
 		deps[i].level = newLevel
 		deps[i].numOfDeps = s.numOfDeps
 		deps[i].id = numOfServices
-		c.ExtraDeps[i] = gobs.CustomService{
+		sCfg.ExtraDeps[i] = gobs.CustomService{
 			Name:     fmt.Sprintf("Sample-%d-%d", newLevel, numOfServices),
 			Instance: &deps[i],
 		}
 	}
 
-	return nil
+	return sCfg, nil
 }
 
 var _ gobs.IService = (*SampleService)(nil)

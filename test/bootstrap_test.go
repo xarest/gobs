@@ -41,13 +41,10 @@ func (s *BootstrapSuit) TestSync() {
 	ctx, cancel := context.WithDeadline(mainCtx, time.Now().Add(5*time.Second))
 	defer cancel() // It's a good practice to call cancel even if not strictly necessary here
 
-	// var logger logger.LogFnc = func(s string, i ...interface{}) {
-	// 	fmt.Printf(s+"\n", i...)
-	// }
 	bs := gobs.NewBootstrap(gobs.Config{
 		NumOfConcurrencies: 0,
-		Logger:             &log,
-		// EnableLogDetail: true,
+		// Logger:             &log,
+		// EnableLogDetail:    true,
 	})
 	bs.AddDefault(&D{})
 

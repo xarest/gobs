@@ -34,25 +34,27 @@ type SampleAsyncService struct {
 }
 
 // Init implements gobs.IService.
-func (s *SampleAsyncService) Init(ctx context.Context, c *gobs.Service) error {
+func (s *SampleAsyncService) Init(ctx context.Context) (*gobs.ServiceLifeCycle, error) {
+	sCfg := gobs.ServiceLifeCycle{}
 	numOfServices++
 	if s.level > 0 {
 		deps := make([]SampleAsyncService, s.numOfDeps)
-		c.ExtraDeps = make([]gobs.CustomService, s.numOfDeps)
+		sCfg.ExtraDeps = make([]gobs.CustomService, s.numOfDeps)
 		newLevel := s.level - 1
 		for i := 0; i < s.numOfDeps; i++ {
 			deps[i].level = newLevel
 			deps[i].numOfDeps = s.numOfDeps
 			deps[i].id = numOfServices
-			c.ExtraDeps[i] = gobs.CustomService{
+			sCfg.ExtraDeps[i] = gobs.CustomService{
 				Name:     fmt.Sprintf("Sample-%d-%d-%d", newLevel, i, numOfServices),
 				Instance: &deps[i],
 			}
 		}
 	}
-	c.AsyncMode[common.StatusSetup] = true
-
-	return nil
+	sCfg.AsyncMode = map[common.ServiceStatus]bool{
+		common.StatusSetup: true,
+	}
+	return &sCfg, nil
 }
 
 var _ gobs.IService = (*SampleAsyncService)(nil)

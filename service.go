@@ -28,7 +28,22 @@ type IService interface {
 	// 	s.AsyncMode[common.StatusSetup] = true // This line will make OnSetup method be called in concurrent context without blocking others.
 	// 	return nil
 	// }
-	Init(ctx context.Context, s *Service) error
+	Init(ctx context.Context) (*ServiceLifeCycle, error)
+}
+
+// Without configuration of OnSetup at Init(...), this method will be called when main process invokes bootstrap.Setup(...).
+type IServiceSetup interface {
+	Setup(ctx context.Context, deps Dependencies) error
+}
+
+// Start method will be called when the main context invokes the bootstrap.Start(...) method and OnStart method is not configured at Init(...).
+type IServiceStart interface {
+	Start(ctx context.Context) error
+}
+
+// Stop method will be called when the main context invokes the bootstrap.Stop(...) method and OnStop method is not configured at Init(...).
+type IServiceStop interface {
+	Stop(ctx context.Context) error
 }
 
 type ServiceLifeCycle struct {
@@ -36,98 +51,20 @@ type ServiceLifeCycle struct {
 	// This method is used to assign the dependencies instances which has setup successfully from gobs to the service instance.
 	// The `deps` parameter is a list of dependencies that the service instance depends on. The `extraDeps` parameter is a list of
 	// custom dependencies in case service don't share dependencies with the others.
-	//
-	// Example:
-	//
-	// sb.OnSetup = func(ctx context.Context, deps []gobs.IService, extraDeps []gobs.CustomService) error {
-	// 	o.log = deps[0].(*logger.Logger)
-	// 	config := deps[1].(*config.Configuration)
-	// 	var dbConfig DatabaseConfig
-	// 	if err := config.ParseConfig(&dbConfig); err != nil {
-	// 		return err
-	// 	}
-	// 	o.config = &dbConfig
-	// 	return o.Setup(ctx)
-	// }
-	// func (o *Gorm) Setup(ctx context.Context) error {
-	// 	o.log.Debug("Connecting to database")
-	// 	dsn := fmt.Sprintf(
-	// 		"user=%s password=%s host=%s port=%d dbname=%s sslmode=%s",
-	// 		o.config.Username,
-	// 		o.config.Password,
-	// 		o.config.Host,
-	// 		o.config.Port,
-	// 		o.config.DBName,
-	// 		o.config.SSLMode,
-	// 	)
-	// 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
-	// 		Logger: zapgorm2.New(o.log.Desugar()),
-	// 	})
-	// 	if err != nil {
-	// 		return err
-	// 	}
-	// 	o.Db = db
-	// 	return nil
-	// }
-	OnSetup func(ctx context.Context, deps []IService, extraDeps []CustomService) error
+	OnSetup func(ctx context.Context, deps Dependencies) error
 
 	// OnStart is a callback function that will be called when the main context invokes the bootstrap.Start(...) method.
 	// Service instances passing OnStart method will be marked as `common.StatusStart` status.
-	//
-	// Example:
-	//
-	// func (o *Gorm) Init(ctx context.Context, sb *gobs.Service) error {
-	// 	sb.OnStart = func(ctx context.Context) error {
-	// 		return o.Start(ctx)
-	// 	}
-	// }
-	//
-	// func (o *Gorm) Start(c context.Context) error {
-	// 	db, err := o.Db.DB()
-	// 	if err != nil {
-	// 		o.log.Error("Failed to get database connection", zap.Error(err))
-	// 		return err
-	// 	}
-	// 	err = db.Ping()
-	// 	if err != nil {
-	// 		o.log.Error("Database connection failed", zap.Error(err))
-	// 		return err
-	// 	}
-	// 	o.log.Info("Database connected")
-	// 	return nil
-	// }
 	OnStart func(context.Context) error
 
 	// OnStop is a callback function that will be called when the main context invokes the bootstrap.Stop(...) method.
 	// Only services passing OnSetup method (return nil) are able to be invoked this method in stopping phase.
-	//
-	// Example:
-	//
-	// func (o *Gorm) Init(ctx context.Context, sb *gobs.Service) error {
-	// 	sb.OnStop = func(ctx context.Context) error {
-	// 		return o.Stop(ctx)
-	// 	}
-	// }
-	//
-	// func (o *Gorm) Stop(c context.Context) error {
-	// 	db, err := o.Db.DB()
-	// 	if err != nil {
-	// 		o.log.Error("Failed to get database connection", zap.Error(err))
-	// 		return err
-	// 	}
-	// 	if err := db.Close(); err != nil {
-	// 		o.log.Error("Failed to close database connection", zap.Error(err))
-	// 		return err
-	// 	}
-	// 	o.log.Info("Database connection closed")
-	// 	return nil
-	// }
 	OnStop func(context.Context) error
 
 	// Deps is a list of dependencies that the service instance depends on. This list is just a reference to the type struct.
 	// Gobs will automatically look up the existing instances or create new instances based on the type struct.
 	// Then set dependencies to the service instance after Init(...) method returns nil.
-	Deps []IService
+	Deps Dependencies
 
 	// ExtraDeps is a list of custom dependencies that the service instance depends on.
 	// It provides more information about the instance that the service instance depends on.
@@ -144,17 +81,6 @@ type ServiceLifeCycle struct {
 
 	// AsyncMode is a map of service status and boolean value. If the value is true, the service instance will be run in parallel goroutine context.
 	// Otherwise, the service instance will be run in sequential context.
-	//
-	// Example:
-	//
-	// func (d *D) Init(ctx context.Context, s *gobs.Service) error {
-	// 	s.AsyncMode = map[common.ServiceStatus]bool {
-	// 		common.StatusInit:  false, // Init(...) will be called in sequential context
-	// 		common.StatusSetup: true,  // Setup(...) will be called in separate goroutine context
-	// 		common.StatusStart: true,  // Start(...) will be called in separate goroutine context
-	// 		common.StatusStop:  false, // Stop(...) will be called in sequential context
-	// 	}
-	// }
 	AsyncMode map[common.ServiceStatus]bool
 }
 
@@ -185,9 +111,6 @@ func NewService(s IService, name string, status common.ServiceStatus, log *logge
 	c := &Service{
 		ServiceLifeCycle: ServiceLifeCycle{
 			AsyncMode: make(map[common.ServiceStatus]bool, common.StatusStop+1),
-			OnSetup:   func(_ context.Context, _ []IService, _ []CustomService) error { return nil },
-			OnStart:   utils.EmptyFunc,
-			OnStop:    utils.EmptyFunc,
 		},
 		Logger:   log,
 		instance: s,
@@ -225,13 +148,32 @@ func (sb *Service) Run(ctx context.Context, ss common.ServiceStatus) (err error)
 		mutex.Lock()
 		defer mutex.Unlock()
 	}
+	logKey := utils.CompactName(sb.name)
 	switch ss {
 	case common.StatusSetup:
-		err = sb.OnSetup(ctx, sb.Deps, sb.ExtraDeps)
+		if sb.OnSetup != nil {
+			err = sb.OnSetup(ctx, sb.Deps)
+		} else if s, ok := sb.instance.(IServiceSetup); ok {
+			err = s.Setup(ctx, sb.Deps)
+		} else {
+			sb.Log("Service %s does not implement IServiceSetup", logKey)
+		}
 	case common.StatusStart:
-		err = sb.OnStart(ctx)
+		if sb.OnStart != nil {
+			err = sb.OnStart(ctx)
+		} else if s, ok := sb.instance.(IServiceStart); ok {
+			err = s.Start(ctx)
+		} else {
+			sb.Log("Service %s does not implement IServiceStart", logKey)
+		}
 	case common.StatusStop:
-		err = sb.OnStop(ctx)
+		if sb.OnStop != nil {
+			err = sb.OnStop(ctx)
+		} else if s, ok := sb.instance.(IServiceStop); ok {
+			err = s.Stop(ctx)
+		} else {
+			sb.Log("Service %s does not implement IServiceStop", logKey)
+		}
 	default:
 		err = nil
 	}
@@ -245,4 +187,14 @@ func (sb *Service) Run(ctx context.Context, ss common.ServiceStatus) (err error)
 
 func (sb *Service) IsRunAsync(ss common.ServiceStatus) bool {
 	return sb.AsyncMode[ss]
+}
+
+func (sb *Service) UpdateDependencies(dep *Service) {
+	sb.following = append(sb.following, dep)
+	dep.followers = append(dep.followers, sb)
+	logKey := utils.CompactName(sb.name)
+	logServiceKey := utils.CompactName(dep.name)
+	sb.Log("Service %s depends on service %s (%d) and service %s has service %s as a follower (%d)",
+		logServiceKey, logKey, len(sb.following), logKey, logServiceKey, len(dep.followers),
+	)
 }
