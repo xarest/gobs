@@ -1,14 +1,20 @@
 package logger
 
+import "fmt"
+
 type LogFnc func(format string, args ...interface{})
 
+var DEFAULT_SIMPLE_LOG LogFnc = func(s string, i ...interface{}) {
+	fmt.Printf(s+"\n", i...)
+}
+
 type Logger struct {
-	log         *LogFnc
+	log         LogFnc
 	isLogDetail bool
 	tag         string
 }
 
-func NewLog(log *LogFnc) *Logger {
+func NewLog(log LogFnc) *Logger {
 	return &Logger{
 		log: log,
 	}
@@ -36,9 +42,9 @@ func (l *Logger) LogS(format string, args ...interface{}) {
 	if l.log != nil {
 		if l.isLogDetail {
 			args = append([]interface{}{l.tag + ":"}, args...)
-			(*l.log)("%s "+format, args...)
+			l.log("%s "+format, args...)
 		} else {
-			(*l.log)(format, args...)
+			l.log(format, args...)
 		}
 	}
 }

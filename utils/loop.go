@@ -41,3 +41,17 @@ func WaitOnEvents[T any](ctx context.Context, onEvents func(ctx context.Context,
 		}
 	}
 }
+
+func WrapChannel[T, K any](ctx context.Context, ch chan T) chan K {
+	wrappedCh := make(chan K)
+	go func() {
+		defer close(wrappedCh)
+		k := new(K)
+		select {
+		case <-ch:
+		case <-ctx.Done():
+		}
+		wrappedCh <- *k
+	}()
+	return wrappedCh
+}
