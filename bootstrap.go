@@ -291,6 +291,7 @@ func (bs *Bootstrap) StartBootstrap(ctx context.Context, quits ...chan struct{})
 	utils.WaitOnEvents(ctxDone, func(ctx context.Context, event struct{}) error {
 		return common.ErrorEndOfProcessing
 	}, nil, quits...)
+	bs.Interrupt(ctxDone)
 
 	quitCtx, done := context.WithTimeout(appCtx, 10*time.Second)
 	defer done()
