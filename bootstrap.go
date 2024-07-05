@@ -3,6 +3,7 @@ package gobs
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/traphamxuan/gobs/common"
 	"github.com/traphamxuan/gobs/logger"
@@ -267,6 +268,39 @@ func (bs *Bootstrap) Interrupt(ctx context.Context) {
 	for k := range bs.schedulers {
 		bs.schedulers[k].Interrupt()
 	}
+}
+
+func (bs *Bootstrap) StartBootstrap(ctx context.Context, quits ...chan struct{}) {
+	appCtx, cancelAll := context.WithCancel(ctx)
+	defer cancelAll()
+	ctxDone, cancel := context.WithCancel(appCtx)
+	defer cancel()
+	go func(ctx context.Context, cancel context.CancelFunc) {
+		defer cancel()
+		if err := bs.Init(ctx); err != nil {
+			bs.LogS("Failed to init services: %s", err.Error())
+			return
+		}
+		if err := bs.Setup(ctx); err != nil {
+			bs.LogS("Failed to setup services: %s", err.Error())
+			return
+		}
+		bs.Start(ctx)
+	}(appCtx, cancel)
+
+	utils.WaitOnEvents(ctxDone, func(ctx context.Context, event struct{}) error {
+		return common.ErrorEndOfProcessing
+	}, nil, quits...)
+
+	quitCtx, done := context.WithTimeout(appCtx, 10*time.Second)
+	defer done()
+	go func() {
+		defer done()
+		bs.Stop(quitCtx)
+		bs.Deinit(quitCtx)
+	}()
+	// catching ctx.Done(). timeout of 5 seconds.
+	<-quitCtx.Done()
 }
 
 func (bs *Bootstrap) execute(ctx context.Context, ss common.ServiceStatus, tasks []types.ITask, numOfConcurrencies int) (err error) {

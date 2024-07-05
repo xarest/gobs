@@ -2,18 +2,12 @@ package gobs_test
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/traphamxuan/gobs"
-	"github.com/traphamxuan/gobs/logger"
 )
-
-var log logger.LogFnc = func(s string, i ...interface{}) {
-	fmt.Printf(s+"\n", i...)
-}
 
 func (s *BootstrapSuit) TestSyncScheduler() {
 	t := s.T()
@@ -52,7 +46,7 @@ func (s *BootstrapSuit) TestAsyncSchedulerWithError() {
 	setupOrder = []int{}
 	bs := gobs.NewBootstrap(gobs.Config{
 		NumOfConcurrencies: gobs.DEFAULT_MAX_CONCURRENT,
-		// Logger:             &log,
+		// Logger:             &logger.DEFAULT_SIMPLE_LOG,
 		// EnableLogDetail:    true,
 	})
 	ctx, cancel := context.WithDeadline(context.TODO(), time.Now().Add(5*time.Second))

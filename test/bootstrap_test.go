@@ -43,7 +43,7 @@ func (s *BootstrapSuit) TestSync() {
 
 	bs := gobs.NewBootstrap(gobs.Config{
 		NumOfConcurrencies: 0,
-		// Logger:             &log,
+		// Logger:             &logger.DEFAULT_SIMPLE_LOG,
 		// EnableLogDetail:    true,
 	})
 	bs.AddDefault(&D{})
