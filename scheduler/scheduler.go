@@ -4,10 +4,10 @@ import (
 	"context"
 	"sync"
 
-	"github.com/traphamxuan/gobs/common"
-	"github.com/traphamxuan/gobs/logger"
-	"github.com/traphamxuan/gobs/types"
-	"github.com/traphamxuan/gobs/utils"
+	"github.com/xarest/gobs/common"
+	"github.com/xarest/gobs/logger"
+	"github.com/xarest/gobs/types"
+	"github.com/xarest/gobs/utils"
 )
 
 type Scheduler struct {

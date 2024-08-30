@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/traphamxuan/gobs/common"
+	"github.com/xarest/gobs/common"
 )
 
 type Dependencies []IService

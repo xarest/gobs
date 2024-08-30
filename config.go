@@ -1,6 +1,6 @@
 package gobs
 
-import "github.com/traphamxuan/gobs/logger"
+import "github.com/xarest/gobs/logger"
 
 type Config struct {
 	NumOfConcurrencies int

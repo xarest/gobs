@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/stretchr/testify/require"
-	"github.com/traphamxuan/gobs"
+	"github.com/xarest/gobs"
 )
 
 var numOfServices = 0

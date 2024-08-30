@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/traphamxuan/gobs/common"
+	"github.com/xarest/gobs/common"
 )
 
 func CompactName(name string) string {

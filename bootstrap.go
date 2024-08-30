@@ -5,11 +5,11 @@ import (
 	"errors"
 	"time"
 
-	"github.com/traphamxuan/gobs/common"
-	"github.com/traphamxuan/gobs/logger"
-	"github.com/traphamxuan/gobs/scheduler"
-	"github.com/traphamxuan/gobs/types"
-	"github.com/traphamxuan/gobs/utils"
+	"github.com/xarest/gobs/common"
+	"github.com/xarest/gobs/logger"
+	"github.com/xarest/gobs/scheduler"
+	"github.com/xarest/gobs/types"
+	"github.com/xarest/gobs/utils"
 )
 
 type Bootstrap struct {
@@ -26,8 +26,8 @@ type Bootstrap struct {
 // Example:
 //
 //	import (
-//		"github.com/traphamxuan/gobs"
-//		"github.com/traphamxuan/gobs/logger"
+//		"github.com/xarest/gobs"
+//		"github.com/xarest/gobs/logger"
 //		"fmt"
 //	)
 //

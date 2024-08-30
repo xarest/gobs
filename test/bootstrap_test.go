@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	"github.com/traphamxuan/gobs"
+	"github.com/xarest/gobs"
 )
 
 type BootstrapSuit struct {

@@ -3,7 +3,7 @@ package types
 import (
 	"context"
 
-	"github.com/traphamxuan/gobs/common"
+	"github.com/xarest/gobs/common"
 )
 
 type ITask interface {

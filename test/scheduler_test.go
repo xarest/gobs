@@ -8,11 +8,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	"github.com/traphamxuan/gobs"
-	"github.com/traphamxuan/gobs/common"
-	"github.com/traphamxuan/gobs/logger"
-	"github.com/traphamxuan/gobs/scheduler"
-	"github.com/traphamxuan/gobs/types"
+	"github.com/xarest/gobs"
+	"github.com/xarest/gobs/common"
+	"github.com/xarest/gobs/logger"
+	"github.com/xarest/gobs/scheduler"
+	"github.com/xarest/gobs/types"
 )
 
 type SchedulerSuit struct {

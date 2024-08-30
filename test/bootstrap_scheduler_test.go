@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/traphamxuan/gobs"
+	"github.com/xarest/gobs"
 )
 
 func (s *BootstrapSuit) TestSyncScheduler() {

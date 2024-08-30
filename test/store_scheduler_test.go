@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/traphamxuan/gobs"
-	"github.com/traphamxuan/gobs/common"
+	"github.com/xarest/gobs"
+	"github.com/xarest/gobs/common"
 )
 
 func commonSetup(id int, err error, delayms time.Duration) func(ctx context.Context, deps gobs.Dependencies) error {

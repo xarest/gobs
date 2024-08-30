@@ -3,7 +3,7 @@ package gobs_test
 import (
 	"context"
 
-	"github.com/traphamxuan/gobs"
+	"github.com/xarest/gobs"
 )
 
 type A struct{}

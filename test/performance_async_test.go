@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	"github.com/stretchr/testify/require"
-	"github.com/traphamxuan/gobs"
-	"github.com/traphamxuan/gobs/common"
+	"github.com/xarest/gobs"
+	"github.com/xarest/gobs/common"
 )
 
 func (s *BootstrapSuit) TestAsyncPerformance() {
