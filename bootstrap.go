@@ -70,18 +70,15 @@ func (bs *Bootstrap) Deinit(ctx context.Context) {
 //
 //	a := bs.GetService(nil, "abc") // Return instance of service which has key "abc"
 //	a := bs.GetService(&A{}, "") // Return instance of service type A which has default key which is path of struct A
-func (bs *Bootstrap) GetService(service IService, key string) IService {
+func GetService[T IService](bs *Bootstrap, service T, key string) (*T, bool) {
 	if key == "" {
-		if service == nil {
-			return nil
-		}
 		key = utils.DefaultServiceName(service)
 	}
 	if cp, ok := bs.keys[key]; ok {
-		return cp.instance
+		res, ok := cp.instance.(*T)
+		return res, ok
 	}
-	return nil
-
+	return &service, false
 }
 
 // AddDefault is wrapper for Add method with default key and status of the service instance.
@@ -105,6 +102,15 @@ func (bs *Bootstrap) AddOrPanic(s IService, args ...string) {
 	if err := bs.AddDefault(s, args...); err != nil {
 		panic(err)
 	}
+}
+
+func (bs *Bootstrap) AddMany(services ...IService) error {
+	for _, s := range services {
+		if err := bs.AddDefault(s); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Add method is used to add a service instance to the bootstrap.
@@ -164,15 +170,17 @@ func (bs *Bootstrap) Init(ctx context.Context) error {
 		sb := bs.services[i]
 		taskKey := utils.CompactName(sb.name)
 		unTag := bs.AddTag(taskKey)
-		sCfg, err := sb.instance.Init(ctx)
-		if err != nil {
-			bs.LogS("Failed to init %s", taskKey, err.Error())
-			return err
-		}
-		if sCfg != nil {
-			if err := bs.setupNetworkConnection(sb, *sCfg); err != nil {
-				bs.LogS("Failed to set dependencies, %s", sb.name, err.Error())
+		if inst, ok := sb.instance.(ServiceInit); ok {
+			sCfg, err := inst.Init(ctx)
+			if err != nil {
+				bs.LogS("Failed to init %s", taskKey, err.Error())
 				return err
+			}
+			if sCfg != nil {
+				if err := bs.setupNetworkConnection(sb, *sCfg); err != nil {
+					bs.LogS("Failed to set dependencies, %s", sb.name, err.Error())
+					return err
+				}
 			}
 		}
 

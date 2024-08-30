@@ -51,19 +51,19 @@ func (s *BootstrapSuit) TestSync() {
 	require.NoError(t, bs.Init(ctx), "Init expected no error")
 	require.NoError(t, bs.Setup(ctx), "Setup expected no error")
 
-	a, ok := bs.GetService(&A{}, "").(*A)
+	a, ok := gobs.GetService(bs, A{}, "")
 	require.True(t, ok, "Expected A is valid")
 	require.NotNil(t, a, "Expected A is not nil")
 
-	b, ok := bs.GetService(&B{}, "").(*B)
+	b, ok := gobs.GetService(bs, B{}, "")
 	require.True(t, ok, "Expected B is valid")
 	require.NotNil(t, b, "Expected B is not nil")
 
-	c, ok := bs.GetService(&C{}, "").(*C)
+	c, ok := gobs.GetService(bs, C{}, "")
 	require.True(t, ok, "Expected C is valid")
 	require.NotNil(t, c, "Expected C is not nil")
 
-	d, ok := bs.GetService(&D{}, "").(*D)
+	d, ok := gobs.GetService(bs, D{}, "")
 	require.True(t, ok, "Expected D is valid")
 	require.NotNil(t, d, "Expected D is not nil")
 

@@ -56,7 +56,7 @@ func (s *BootstrapSuit) TestAsyncSchedulerWithError() {
 	s9 := &S9{err: assert.AnError}
 	require.NoError(t, bs.AddDefault(s9), "AddDefault expected no error")
 	require.NoError(t, bs.Init(ctx), "Init expected no error")
-	s9, ok := bs.GetService(&S9{}, "").(*S9)
+	s9, ok := gobs.GetService(bs, S9{}, "")
 	require.True(t, ok, "Expected GetService return S9")
 	require.NotNil(t, s9, "Expected S9 is not nil")
 	s9.err = assert.AnError
@@ -72,13 +72,13 @@ func (s *BootstrapSuit) TestAsyncSchedulerWithError() {
 	assert.Equal(t, expectedStopOrder, stopOrder, "Expected stopOrder to match expectedStopOrder")
 	s9.err = nil
 
-	s6, ok := bs.GetService(&S6{}, "").(*S6)
+	s6, ok := gobs.GetService(bs, S6{}, "")
 	require.True(t, ok, "Expected GetService return s6")
 	require.NotNil(t, s6, "Expected s6 is not nil")
-	s10, ok := bs.GetService(&S10{}, "").(*S10)
+	s10, ok := gobs.GetService(bs, S10{}, "")
 	require.True(t, ok, "Expected GetService return s10")
 	require.NotNil(t, s10, "Expected s10 is not nil")
-	s11, ok := bs.GetService(&S11{}, "").(*S11)
+	s11, ok := gobs.GetService(bs, S11{}, "")
 	require.True(t, ok, "Expected GetService return S11")
 	require.NotNil(t, s11, "Expected S11 is not nil")
 	assert.Equal(t, s10, s6.S10, "Expected s6.s10 to match s10")

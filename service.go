@@ -10,7 +10,9 @@ import (
 	"github.com/xarest/gobs/utils"
 )
 
-type IService interface {
+type IService interface{}
+
+type ServiceInit interface {
 	// Entry point to connect service intances with the others. This method will be called at the beginning of the bootstrap process
 	// to build up the dependencies between services. This method will setup `s *Service` lifecycle.
 	//
@@ -85,9 +87,9 @@ type ServiceLifeCycle struct {
 }
 
 type CustomService struct {
-	Service  IService
+	Service  any
 	Name     string
-	Instance interface{}
+	Instance IService
 }
 
 type Service struct {
@@ -107,7 +109,7 @@ func (sb *Service) Name() string {
 	return sb.name
 }
 
-func NewService(s IService, name string, status common.ServiceStatus, log *logger.Logger) *Service {
+func NewService(s any, name string, status common.ServiceStatus, log *logger.Logger) *Service {
 	c := &Service{
 		ServiceLifeCycle: ServiceLifeCycle{
 			AsyncMode: make(map[common.ServiceStatus]bool, common.StatusStop+1),
