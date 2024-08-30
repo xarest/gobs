@@ -12,7 +12,7 @@ import (
 
 type IService interface{}
 
-type ServiceInit interface {
+type IServiceInit interface {
 	// Entry point to connect service intances with the others. This method will be called at the beginning of the bootstrap process
 	// to build up the dependencies between services. This method will setup `s *Service` lifecycle.
 	//
@@ -49,16 +49,21 @@ type IServiceStop interface {
 }
 
 type ServiceLifeCycle struct {
+	OnInterrupt func(errno int)
+
+	// deprecated: Define func () Setup(ctx context.Context, deps Dependencies) error instead of OnSetup.
 	// OnSetup is a callback function that will be called when the main context invokes the bootstrap.Setup(...) method.
 	// This method is used to assign the dependencies instances which has setup successfully from gobs to the service instance.
 	// The `deps` parameter is a list of dependencies that the service instance depends on. The `extraDeps` parameter is a list of
 	// custom dependencies in case service don't share dependencies with the others.
 	OnSetup func(ctx context.Context, deps Dependencies) error
 
+	// deprecated: Define func () Start(ctx context.Context) error instead of OnStart.
 	// OnStart is a callback function that will be called when the main context invokes the bootstrap.Start(...) method.
 	// Service instances passing OnStart method will be marked as `common.StatusStart` status.
 	OnStart func(context.Context) error
 
+	// deprecated: Define func () Stop(ctx context.Context) error instead of OnStop.
 	// OnStop is a callback function that will be called when the main context invokes the bootstrap.Stop(...) method.
 	// Only services passing OnSetup method (return nil) are able to be invoked this method in stopping phase.
 	OnStop func(context.Context) error
@@ -87,7 +92,7 @@ type ServiceLifeCycle struct {
 }
 
 type CustomService struct {
-	Service  any
+	Service  IService
 	Name     string
 	Instance IService
 }

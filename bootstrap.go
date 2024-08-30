@@ -3,6 +3,9 @@ package gobs
 import (
 	"context"
 	"errors"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/xarest/gobs/common"
@@ -18,6 +21,7 @@ type Bootstrap struct {
 	schedulers         map[common.ServiceStatus]*scheduler.Scheduler
 	services           []*Service
 	keys               map[string]*Service
+	errno              int
 }
 
 // NewBootstrap creates a new Bootstrap instance using the provided configurations.
@@ -170,7 +174,7 @@ func (bs *Bootstrap) Init(ctx context.Context) error {
 		sb := bs.services[i]
 		taskKey := utils.CompactName(sb.name)
 		unTag := bs.AddTag(taskKey)
-		if inst, ok := sb.instance.(ServiceInit); ok {
+		if inst, ok := sb.instance.(IServiceInit); ok {
 			sCfg, err := inst.Init(ctx)
 			if err != nil {
 				bs.LogS("Failed to init %s", taskKey, err.Error())
@@ -272,13 +276,19 @@ func (bs *Bootstrap) Stop(ctx context.Context) error {
 // For example:
 // router are waiting for success of database connection, if interrupt is called, router will stop waiting for database connection and return without setting up.
 // if router are running, it will continue to serve requests until OnStop(...) was called to safely shutdown router.
-func (bs *Bootstrap) Interrupt(ctx context.Context) {
+func (bs *Bootstrap) Interrupt(ctx context.Context, reason int) {
+	bs.errno = reason
 	for k := range bs.schedulers {
 		bs.schedulers[k].Interrupt()
 	}
+	for _, service := range bs.services {
+		if service.OnInterrupt != nil {
+			service.OnInterrupt(reason)
+		}
+	}
 }
 
-func (bs *Bootstrap) StartBootstrap(ctx context.Context, quits ...chan struct{}) {
+func (bs *Bootstrap) StartBootstrap(ctx context.Context, signals ...os.Signal) {
 	appCtx, cancelAll := context.WithCancel(ctx)
 	defer cancelAll()
 	ctxDone, cancel := context.WithCancel(appCtx)
@@ -295,12 +305,18 @@ func (bs *Bootstrap) StartBootstrap(ctx context.Context, quits ...chan struct{})
 		}
 		bs.Start(ctx)
 	}(appCtx, cancel)
-
-	utils.WaitOnEvents(ctxDone, func(ctx context.Context, event struct{}) error {
-		return common.ErrorEndOfProcessing
-	}, nil, quits...)
-	bs.Interrupt(ctxDone)
-
+	if len(signals) == 0 {
+		<-ctxDone.Done()
+	} else {
+		var quit = make(chan os.Signal, len(signals))
+		signal.Notify(quit, signals...)
+		select {
+		case <-ctxDone.Done():
+		case sig := <-quit:
+			bs.errno = int(sig.(syscall.Signal))
+		}
+	}
+	bs.Interrupt(ctx, bs.errno)
 	quitCtx, done := context.WithTimeout(appCtx, 10*time.Second)
 	defer done()
 	go func() {
@@ -347,15 +363,8 @@ func (bs *Bootstrap) setupNetworkConnection(sb *Service, sCfg ServiceLifeCycle) 
 		dService, ok := bs.keys[key]
 		if !ok || dService == nil {
 			if cService.Instance != nil {
-				iService, ok := cService.Instance.(IService)
-				if ok {
-					if err := bs.Add(iService, common.StatusUninitialized, key); err != nil {
-						return err
-					}
-				} else {
-					if err := bs.Add(cService.Service, common.StatusUninitialized, key); err != nil {
-						return err
-					}
+				if err := bs.Add(cService.Instance, common.StatusUninitialized, key); err != nil {
+					return err
 				}
 			} else {
 				if err := bs.Add(cService.Service, common.StatusUninitialized, key); err != nil {

@@ -35,7 +35,7 @@ type S1 struct {
 
 func (s *S1) Init(ctx context.Context) (*gobs.ServiceLifeCycle, error) {
 	return &gobs.ServiceLifeCycle{
-		Deps:   []gobs.IService{new(S2), new(S3)},
+		Deps:   gobs.Dependencies{new(S2), new(S3)},
 		OnStop: commonStop(1, nil, 0),
 		OnSetup: func(ctx context.Context, deps gobs.Dependencies) error {
 			if err := deps.Assign(&s.S2, &s.S3); err != nil {
@@ -48,7 +48,7 @@ func (s *S1) Init(ctx context.Context) (*gobs.ServiceLifeCycle, error) {
 	}, nil
 }
 
-var _ gobs.IService = (*S1)(nil)
+var _ gobs.IServiceInit = (*S1)(nil)
 
 type S2 struct {
 	err error
@@ -58,7 +58,7 @@ type S2 struct {
 
 func (s *S2) Init(ctx context.Context) (*gobs.ServiceLifeCycle, error) {
 	return &gobs.ServiceLifeCycle{
-		Deps:   []gobs.IService{new(S4), new(S5)},
+		Deps:   gobs.Dependencies{new(S4), new(S5)},
 		OnStop: commonStop(2, nil, 0),
 		OnSetup: func(ctx context.Context, deps gobs.Dependencies) error {
 			if err := deps.Assign(&s.S4, &s.S5); err != nil {
@@ -71,7 +71,7 @@ func (s *S2) Init(ctx context.Context) (*gobs.ServiceLifeCycle, error) {
 	}, nil
 }
 
-var _ gobs.IService = (*S2)(nil)
+var _ gobs.IServiceInit = (*S2)(nil)
 
 type S3 struct {
 	err error
@@ -82,7 +82,7 @@ type S3 struct {
 
 func (s *S3) Init(ctx context.Context) (*gobs.ServiceLifeCycle, error) {
 	return &gobs.ServiceLifeCycle{
-		Deps:   []gobs.IService{new(S6), new(S7), new(S8)},
+		Deps:   gobs.Dependencies{new(S6), new(S7), new(S8)},
 		OnStop: commonStop(3, nil, 0),
 		OnSetup: func(ctx context.Context, deps gobs.Dependencies) error {
 			if err := deps.Assign(&s.S6, &s.S7, &s.S8); err != nil {
@@ -95,7 +95,7 @@ func (s *S3) Init(ctx context.Context) (*gobs.ServiceLifeCycle, error) {
 	}, nil
 }
 
-var _ gobs.IService = (*S3)(nil)
+var _ gobs.IServiceInit = (*S3)(nil)
 
 type S4 struct {
 	err error
@@ -105,7 +105,7 @@ type S4 struct {
 
 func (s *S4) Init(ctx context.Context) (*gobs.ServiceLifeCycle, error) {
 	return &gobs.ServiceLifeCycle{
-		Deps:   []gobs.IService{new(S9), new(S10)},
+		Deps:   gobs.Dependencies{new(S9), new(S10)},
 		OnStop: commonStop(4, nil, 0),
 		OnSetup: func(ctx context.Context, deps gobs.Dependencies) error {
 			if err := deps.Assign(&s.S9, &s.S10); err != nil {
@@ -118,7 +118,7 @@ func (s *S4) Init(ctx context.Context) (*gobs.ServiceLifeCycle, error) {
 	}, nil
 }
 
-var _ gobs.IService = (*S4)(nil)
+var _ gobs.IServiceInit = (*S4)(nil)
 
 type S5 struct {
 	err error
@@ -129,7 +129,7 @@ type S5 struct {
 
 func (s *S5) Init(ctx context.Context) (*gobs.ServiceLifeCycle, error) {
 	return &gobs.ServiceLifeCycle{
-		Deps:   []gobs.IService{new(S9), new(S10), new(S11)},
+		Deps:   gobs.Dependencies{new(S9), new(S10), new(S11)},
 		OnStop: commonStop(5, nil, 0),
 		OnSetup: func(ctx context.Context, deps gobs.Dependencies) error {
 			if err := deps.Assign(&s.S9, &s.S10, &s.S11); err != nil {
@@ -142,7 +142,7 @@ func (s *S5) Init(ctx context.Context) (*gobs.ServiceLifeCycle, error) {
 	}, nil
 }
 
-var _ gobs.IService = (*S5)(nil)
+var _ gobs.IServiceInit = (*S5)(nil)
 
 type S6 struct {
 	err error
@@ -152,7 +152,7 @@ type S6 struct {
 
 func (s *S6) Init(ctx context.Context) (*gobs.ServiceLifeCycle, error) {
 	return &gobs.ServiceLifeCycle{
-		Deps:   []gobs.IService{new(S10), new(S11)},
+		Deps:   gobs.Dependencies{new(S10), new(S11)},
 		OnStop: commonStop(6, nil, 0),
 		OnSetup: func(ctx context.Context, deps gobs.Dependencies) error {
 			if err := deps.Assign(&s.S10, &s.S11); err != nil {
@@ -165,7 +165,7 @@ func (s *S6) Init(ctx context.Context) (*gobs.ServiceLifeCycle, error) {
 	}, nil
 }
 
-var _ gobs.IService = (*S6)(nil)
+var _ gobs.IServiceInit = (*S6)(nil)
 
 type S7 struct {
 	err error
@@ -174,7 +174,7 @@ type S7 struct {
 
 func (s *S7) Init(ctx context.Context) (*gobs.ServiceLifeCycle, error) {
 	return &gobs.ServiceLifeCycle{
-		Deps:   []gobs.IService{new(S12)},
+		Deps:   gobs.Dependencies{new(S12)},
 		OnStop: commonStop(7, nil, 0),
 		OnSetup: func(ctx context.Context, deps gobs.Dependencies) error {
 			if err := deps.Assign(&s.S12); err != nil {
@@ -187,7 +187,7 @@ func (s *S7) Init(ctx context.Context) (*gobs.ServiceLifeCycle, error) {
 	}, nil
 }
 
-var _ gobs.IService = (*S7)(nil)
+var _ gobs.IServiceInit = (*S7)(nil)
 
 type S8 struct {
 	err error
@@ -196,7 +196,7 @@ type S8 struct {
 
 func (s *S8) Init(ctx context.Context) (*gobs.ServiceLifeCycle, error) {
 	return &gobs.ServiceLifeCycle{
-		Deps:   []gobs.IService{new(S13)},
+		Deps:   gobs.Dependencies{new(S13)},
 		OnStop: commonStop(8, nil, 0),
 		OnSetup: func(ctx context.Context, deps gobs.Dependencies) error {
 			if err := deps.Assign(&s.S13); err != nil {
@@ -209,7 +209,7 @@ func (s *S8) Init(ctx context.Context) (*gobs.ServiceLifeCycle, error) {
 	}, nil
 }
 
-var _ gobs.IService = (*S8)(nil)
+var _ gobs.IServiceInit = (*S8)(nil)
 
 type S9 struct{ err error }
 
@@ -223,7 +223,7 @@ func (s *S9) Init(ctx context.Context) (*gobs.ServiceLifeCycle, error) {
 	}, nil
 }
 
-var _ gobs.IService = (*S9)(nil)
+var _ gobs.IServiceInit = (*S9)(nil)
 
 type S10 struct{ err error }
 
@@ -237,7 +237,7 @@ func (s *S10) Init(ctx context.Context) (*gobs.ServiceLifeCycle, error) {
 	}, nil
 }
 
-var _ gobs.IService = (*S10)(nil)
+var _ gobs.IServiceInit = (*S10)(nil)
 
 type S11 struct{ err error }
 
@@ -251,7 +251,7 @@ func (s *S11) Init(ctx context.Context) (*gobs.ServiceLifeCycle, error) {
 	}, nil
 }
 
-var _ gobs.IService = (*S11)(nil)
+var _ gobs.IServiceInit = (*S11)(nil)
 
 type S12 struct{ err error }
 
@@ -265,7 +265,7 @@ func (s *S12) Init(ctx context.Context) (*gobs.ServiceLifeCycle, error) {
 	}, nil
 }
 
-var _ gobs.IService = (*S12)(nil)
+var _ gobs.IServiceInit = (*S12)(nil)
 
 type S13 struct{ err error }
 
@@ -279,4 +279,4 @@ func (s *S13) Init(ctx context.Context) (*gobs.ServiceLifeCycle, error) {
 	}, nil
 }
 
-var _ gobs.IService = (*S13)(nil)
+var _ gobs.IServiceInit = (*S13)(nil)

@@ -44,6 +44,7 @@ func (s *BootstrapSuit) TestAsyncScheduler() {
 func (s *BootstrapSuit) TestAsyncSchedulerWithError() {
 	t := s.T()
 	setupOrder = []int{}
+	stopOrder = []int{}
 	bs := gobs.NewBootstrap(gobs.Config{
 		NumOfConcurrencies: gobs.DEFAULT_MAX_CONCURRENT,
 		// Logger:             &logger.DEFAULT_SIMPLE_LOG,
@@ -51,7 +52,6 @@ func (s *BootstrapSuit) TestAsyncSchedulerWithError() {
 	})
 	ctx, cancel := context.WithDeadline(context.TODO(), time.Now().Add(5*time.Second))
 	defer cancel()
-	setupOrder = []int{}
 	require.NoError(t, bs.AddDefault(new(S1)), "AddDefault expected no error")
 	s9 := &S9{err: assert.AnError}
 	require.NoError(t, bs.AddDefault(s9), "AddDefault expected no error")
