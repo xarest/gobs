@@ -1,5 +1,9 @@
 # Go Bootstrap (GoBs)
-Golang dependencies injection framework to manage life-cycle and scope of instances of an application at runtime
+Golang dependencies injection framework to manage life-cycle and scope of instances of an application at runtime.
+
+![](gobs-run-13-instances-async.gif)
+
+Documentation website at [gobs.xarest.com](https://gobs.xarest.com)
 
 ## Code convention
 All components have their own dependencies and life-cycle
@@ -8,40 +12,39 @@ All components have their own dependencies and life-cycle
 - Start/Run
 - Stop
 
-If you want to add this life-cycle setting for a instances, please implement `gobs.IService`
+If you want to add this life-cycle setting for a instances, please implement `gobs.IServiceInit`
 ```go
 type D struct {
 	B *B
 	C *C
 }
 
-var _ gobs.IService = (*D)(nil)
+var _ gobs.IServiceInit = (*D)(nil)
 
-func (d *D) Init(ctx context.Context, co *gobs.Service) error {
-	co.Deps = []gobs.IService{&B{}, &C{}} // Define dependencies here
-	co.OnSetup = func(ctx context.Context, deps []gobs.IService, extraDeps []gobs.CustomService) error {
-		// After B & C finish setting up, this callback will be called
-		d.B = deps[0].(*B)
-		d.C = deps[1].(*C)
-		// Other custom setup/configration go here
-		return nil
+func (d *SD) Init(ctx context.Context) (*gobs.ServiceLifeCycle, error) {
+	return &gobs.ServiceLifeCycle{
+		Deps: gobs.Dependencies{new(B), new(C)},
+		common.StatusSetup: true,
+	}, nil
+}
+
+var _ gobs.IServiceSetup = (*D)(nil)
+
+func (d *D) Setup(ctx context.Context, deps gobs.Dependencies) error {
+	if err := deps.Assign(&s.s2, &s.s3); err != nil {
+		fmt.Println("Failed to assign dependencies", err)
+		return err
 	}
-	co.AsyncMode[common.StatusSetup] = true // This line will make OnSetup method be called in concurrent context without blocking others.
 	return nil
 }
+
 ```
 then put this instance to the main thread at init step. All other components required this instance will find this instance with the same manner.
 ```go
 ctx := context.BackGround()
 sm := gobs.NewBootstrap()
 bs.AddDefault(&D{})
-bs.Init(ctx)
-bs.Setup(ctx)
-bs.Start(ctx)
-// ...
-bs.Interrupt()
-// ...
-bs.Stop(ctx)
+bs.StartBootstrap(ctx)
 ```
 With dependencies:
 - B -> A

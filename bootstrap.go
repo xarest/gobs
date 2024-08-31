@@ -318,7 +318,6 @@ func (bs *Bootstrap) StartBootstrap(ctx context.Context, signals ...os.Signal) {
 	}
 	bs.Interrupt(ctx, bs.errno)
 	quitCtx, done := context.WithTimeout(appCtx, 10*time.Second)
-	defer done()
 	go func() {
 		defer done()
 		bs.Stop(quitCtx)
