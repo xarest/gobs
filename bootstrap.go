@@ -310,6 +310,7 @@ func (bs *Bootstrap) StartBootstrap(ctx context.Context, signals ...os.Signal) {
 	} else {
 		var quit = make(chan os.Signal, len(signals))
 		signal.Notify(quit, signals...)
+		defer close(quit)
 		select {
 		case <-ctxDone.Done():
 		case sig := <-quit:

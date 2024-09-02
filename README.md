@@ -1,7 +1,7 @@
 # Go Bootstrap (GoBs)
 Golang dependencies injection framework to manage life-cycle and scope of instances of an application at runtime.
 
-![](gobs-run-13-instances-async.gif)
+![](https://raw.githubusercontent.com/xarest/gobs-docs/2b45a24e23ef25d50b1859dba807f2630418cd01/content/docs/getting-started/03_samples/gobs-run-13-instances-async.gif)
 
 Documentation website at [gobs.xarest.com](https://gobs.xarest.com)
 
