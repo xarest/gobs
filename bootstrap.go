@@ -254,10 +254,7 @@ func (bs *Bootstrap) Interrupt(ctx context.Context, reason int) {
 func (bs *Bootstrap) StartBootstrap(ctx context.Context, signals ...os.Signal) {
 	appCtx, cancelAll := context.WithCancel(ctx)
 	defer cancelAll()
-	ctxDone, cancel := context.WithCancel(appCtx)
-	defer cancel()
-	go func(ctx context.Context, cancel context.CancelFunc) {
-		defer cancel()
+	go func(ctx context.Context) {
 		if err := bs.Init(ctx); err != nil {
 			bs.LogS("Failed to init services: %s", err.Error())
 			return
@@ -267,19 +264,20 @@ func (bs *Bootstrap) StartBootstrap(ctx context.Context, signals ...os.Signal) {
 			return
 		}
 		bs.Start(ctx)
-	}(appCtx, cancel)
+	}(appCtx)
 	if len(signals) == 0 {
-		<-ctxDone.Done()
-	} else {
-		var quit = make(chan os.Signal, len(signals))
-		signal.Notify(quit, signals...)
-		defer close(quit)
-		select {
-		case <-ctxDone.Done():
-		case sig := <-quit:
-			bs.errno = int(sig.(syscall.Signal))
-		}
+		signals = []os.Signal{syscall.SIGINT, syscall.SIGTERM}
 	}
+
+	var quit = make(chan os.Signal, len(signals))
+	signal.Notify(quit, signals...)
+	defer close(quit)
+	select {
+	case <-appCtx.Done():
+	case sig := <-quit:
+		bs.errno = int(sig.(syscall.Signal))
+	}
+
 	bs.Interrupt(ctx, bs.errno)
 	quitCtx, done := context.WithTimeout(appCtx, 10*time.Second)
 	go func() {
