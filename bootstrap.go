@@ -26,24 +26,6 @@ type Bootstrap struct {
 
 // NewBootstrap creates a new Bootstrap instance using the provided configurations.
 // If no configuration options are passed, it applies the DefaultConfig
-//
-// Example:
-//
-//	import (
-//		"github.com/xarest/gobs"
-//		"github.com/xarest/gobs/logger"
-//		"fmt"
-//	)
-//
-//	var log logger.LogFnc = func(s string, i ...interface{}) {
-//		fmt.Printf(s+"\n", i...)
-//	}
-//
-//	bs := gobs.NewBootstrap(gobs.Config {
-//		NumOfConcurrencies: -1, // -1 means unlimited
-//		EnableLogDetail:    false,
-//		Logger:             &log,
-//	})
 func NewBootstrap(configs ...Config) *Bootstrap {
 	cfg := DefaultConfig
 	if len(configs) > 0 {
@@ -121,25 +103,6 @@ func (bs *Bootstrap) AddMany(services ...IService) error {
 // The service instance must implement IService interface.
 // The status of the service instance can be any value from common.ServiceStatus.
 // It is helpful but not recommend to setup service instance before adding to the bootstrap.
-//
-// Example:
-//
-//	func main() {
-//		log = &logger.Logger{}
-//
-//		if err := api.log.Setup(ctx); err != nil {
-//			panic(err)
-//		}
-//
-//		var l gl.LogFnc = api.log.Debugf
-//
-//		bs := gobs.NewBootstrap(gobs.Config{
-//			NumOfConcurrencies: -1,
-//			Logger:             &l,
-//		})
-//
-//		bs.Add(log, common.StatusSetup, "") // log instance will skip setup process
-//	}
 func (bs *Bootstrap) Add(s IService, status common.ServiceStatus, key string) error {
 	untag := bs.AddTag("Add")
 	defer untag()

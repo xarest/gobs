@@ -14,7 +14,7 @@ type TStruct struct {
 	Name string
 }
 
-func (t *TStruct) Setup(ctx context.Context, deps gobs.Dependencies) error {
+func (t *TStruct) Setup(ctx context.Context, deps ...gobs.IService) error {
 	t.Name = deps[0].(string)
 	return nil
 }

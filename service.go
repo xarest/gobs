@@ -10,7 +10,7 @@ import (
 	"github.com/xarest/gobs/utils"
 )
 
-type IService interface{}
+type IService any
 
 type IServiceInit interface {
 	// Entry point to connect service intances with the others. This method will be called at the beginning of the bootstrap process
@@ -35,12 +35,16 @@ type IServiceInit interface {
 
 // Without configuration of OnSetup at Init(...), this method will be called when main process invokes bootstrap.Setup(...).
 type IServiceSetup interface {
-	Setup(ctx context.Context, deps Dependencies) error
+	Setup(ctx context.Context, deps ...IService) error
 }
 
 // Start method will be called when the main context invokes the bootstrap.Start(...) method and OnStart method is not configured at Init(...).
 type IServiceStart interface {
 	Start(ctx context.Context) error
+}
+
+type IServiceStartServer interface {
+	StartServer(ctx context.Context, onReady func(err error)) error
 }
 
 // Stop method will be called when the main context invokes the bootstrap.Stop(...) method and OnStop method is not configured at Init(...).
@@ -56,17 +60,7 @@ type ServiceLifeCycle struct {
 	// This method is used to assign the dependencies instances which has setup successfully from gobs to the service instance.
 	// The `deps` parameter is a list of dependencies that the service instance depends on. The `extraDeps` parameter is a list of
 	// custom dependencies in case service don't share dependencies with the others.
-	OnSetup func(ctx context.Context, deps Dependencies) error
-
-	// deprecated: Define func () Start(ctx context.Context) error instead of OnStart.
-	// OnStart is a callback function that will be called when the main context invokes the bootstrap.Start(...) method.
-	// Service instances passing OnStart method will be marked as `common.StatusStart` status.
-	OnStart func(context.Context) error
-
-	// deprecated: Define func () Stop(ctx context.Context) error instead of OnStop.
-	// OnStop is a callback function that will be called when the main context invokes the bootstrap.Stop(...) method.
-	// Only services passing OnSetup method (return nil) are able to be invoked this method in stopping phase.
-	OnStop func(context.Context) error
+	AfterInit func(ctx context.Context, deps ...IService) error
 
 	// Deps is a list of dependencies that the service instance depends on. This list is just a reference to the type struct.
 	// Gobs will automatically look up the existing instances or create new instances based on the type struct.
@@ -157,26 +151,33 @@ func (sb *Service) Run(ctx context.Context, ss common.ServiceStatus) (err error)
 	}
 	logKey := utils.CompactName(sb.name)
 	switch ss {
+	case common.StatusInit:
+		if sb.AfterInit != nil {
+			err = sb.AfterInit(ctx, sb.Deps...)
+		}
 	case common.StatusSetup:
-		if sb.OnSetup != nil {
-			err = sb.OnSetup(ctx, sb.Deps)
-		} else if s, ok := sb.instance.(IServiceSetup); ok {
-			err = s.Setup(ctx, sb.Deps)
+		if s, ok := sb.instance.(IServiceSetup); ok {
+			err = s.Setup(ctx, sb.Deps...)
 		} else {
 			sb.Log("Service %s does not implement IServiceSetup", logKey)
 		}
 	case common.StatusStart:
-		if sb.OnStart != nil {
-			err = sb.OnStart(ctx)
-		} else if s, ok := sb.instance.(IServiceStart); ok {
+		if s, ok := sb.instance.(IServiceStart); ok {
 			err = s.Start(ctx)
+		} else if s, ok := sb.instance.(IServiceStartServer); ok {
+			var chErr = make(chan error)
+			go func(ctx context.Context) {
+				defer close(chErr)
+				s.StartServer(ctx, func(e error) {
+					chErr <- e
+				})
+			}(ctx)
+			err = <-chErr
 		} else {
 			sb.Log("Service %s does not implement IServiceStart", logKey)
 		}
 	case common.StatusStop:
-		if sb.OnStop != nil {
-			err = sb.OnStop(ctx)
-		} else if s, ok := sb.instance.(IServiceStop); ok {
+		if s, ok := sb.instance.(IServiceStop); ok {
 			err = s.Stop(ctx)
 		} else {
 			sb.Log("Service %s does not implement IServiceStop", logKey)
