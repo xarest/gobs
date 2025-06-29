@@ -23,20 +23,6 @@ pipeline {
                 sh 'go test ./... -cover'
             }
         }
-        stage('Build and Export Artifacts') {
-            when {
-                anyOf {
-                    branch 'main'
-                    expression { return env.GIT_BRANCH =~ /^release\/.*/ }
-                    expression { return env.GIT_TAG_NAME =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/ }
-                }
-            }
-            steps {
-                sh 'mkdir -p ${ARTIFACTS_DIR}'
-                sh 'GOOS=linux GOARCH=amd64 go build -o ${ARTIFACTS_DIR}/${BINARY_NAME} ./cmd/main.go' // Adjust path to main.go as needed
-                archiveArtifacts artifacts: "${ARTIFACTS_DIR}/${BINARY_NAME}", fingerprint: true
-            }
-        }
     }
     post {
         always {
